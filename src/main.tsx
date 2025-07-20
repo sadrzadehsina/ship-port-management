@@ -13,11 +13,10 @@ async function enableMocking() {
     return;
   }
 
-  const { worker } = await import("./mocks/browser");
+  const { startWorker } = await import("./mocks/browser");
 
-  // `worker.start()` returns a Promise that resolves
-  // once the Service Worker is up and ready to intercept requests.
-  return worker.start();
+  // Start the worker with the correct service worker path
+  return startWorker();
 }
 
 enableMocking().then(() => {
