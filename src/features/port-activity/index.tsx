@@ -21,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { useAddPortActivity } from "@/queries/use-add-port-activity";
 import { useAllPortActivities } from "@/queries/use-all-port-activities";
 import { useClonePortActivity } from "@/queries/use-clone-port-activity";
-import { useDeletePortActivity } from "@/queries/use-delete-port-activity";
 import { useUpdatePortActivityType } from "@/queries/use-update-port-activity-type";
 import { useUpdatePortActivityDateTime } from "@/queries/use-update-port-activity-datetime";
 import { useUpdatePortActivityPercentage } from "@/queries/use-update-port-activity-percentage";
@@ -39,7 +38,6 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   
   const { data, isLoading, error } = useAllPortActivities(layTimeId || '');
   const addPortActivityMutation = useAddPortActivity();
-  const deletePortActivityMutation = useDeletePortActivity();
   const clonePortActivityMutation = useClonePortActivity();
   const updatePercentageMutation = useUpdatePortActivityPercentage();
   const updateDateTimeMutation = useUpdatePortActivityDateTime();
@@ -76,11 +74,22 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
       const previousToTime = new Date(previousActivity.toDateTime).getTime();
       
-      if (Math.abs(currentFromTime - previousToTime) > 60000) {
+      // Allow for small time differences (1 minute tolerance)
+      const timeDifference = Math.abs(currentFromTime - previousToTime);
+      
+      if (timeDifference > 60000) { // More than 1 minute difference
         violations.push(i);
+        console.log(`Timing violation at index ${i}:`, {
+          current: currentActivity,
+          previous: previousActivity,
+          currentFromTime: new Date(currentFromTime),
+          previousToTime: new Date(previousToTime),
+          difference: timeDifference / 1000 / 60 // in minutes
+        });
       }
     }
     
+    console.log('Validation violations:', violations);
     return violations;
   };
 
@@ -128,13 +137,34 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   const confirmAdjust = () => {
     if (!layTimeId || !data || !activityToAdjust) return;
     
-    const index = activityToAdjust.index;
-    const currentActivity = data[index];
+    console.log('confirmAdjust called with:', { layTimeId, data: data.length, activityToAdjust });
+    
+    // Find the current index of the activity to adjust (in case indices have changed due to deletions)
+    const currentIndex = data.findIndex(activity => 
+      activity.fromDateTime === activityToAdjust.activity.fromDateTime &&
+      activity.activityType === activityToAdjust.activity.activityType &&
+      activity.remarks === activityToAdjust.activity.remarks
+    );
+    
+    console.log('Found activity at index:', currentIndex);
+    
+    if (currentIndex === -1) {
+      // Activity not found, might have been deleted
+      console.log('Activity not found, closing dialog');
+      setAdjustDialogOpen(false);
+      setActivityToAdjust(null);
+      return;
+    }
+    
+    const currentActivity = data[currentIndex];
     const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
+    
+    console.log('Current activity to adjust:', currentActivity);
+    console.log('Current from time:', new Date(currentFromTime));
     
     const newData = [...data];
     
-    const [activityToMove] = newData.splice(index, 1);
+    const [activityToMove] = newData.splice(currentIndex, 1);
     
     let insertIndex = 0;
     
@@ -149,12 +179,25 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       insertIndex = i + 1;
     }
     
+    console.log('Insert index calculated:', insertIndex);
+    console.log('Data length after splice:', newData.length);
+    
     newData.splice(insertIndex, 0, activityToMove);
     
     let adjustedActivity = { ...activityToMove };
     
     adjustedActivity.fromDateTime = new Date(adjustedActivity.fromDateTime);
     adjustedActivity.toDateTime = new Date(adjustedActivity.toDateTime);
+    
+    console.log('Activity before adjustment:', adjustedActivity);
+    
+    // The key fix: adjust the previous activity's toDateTime to connect with this activity's fromDateTime
+    if (insertIndex > 0) {
+      const previousActivity = newData[insertIndex - 1];
+      console.log('Previous activity before adjustment:', previousActivity);
+      previousActivity.toDateTime = new Date(adjustedActivity.fromDateTime);
+      console.log('Adjusted previous activity toDateTime to:', previousActivity.toDateTime);
+    }
     
     if (insertIndex < newData.length - 1) {
       const nextActivity = newData[insertIndex + 1];
@@ -173,6 +216,8 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + originalDuration);
     }
     
+    console.log('Final adjusted activity:', adjustedActivity);
+    
     if (adjustedActivity.toDateTime.getTime() < adjustedActivity.fromDateTime.getTime()) {
       adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
     }
@@ -181,22 +226,30 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     
     newData[insertIndex] = adjustedActivity;
     
-    if (index !== insertIndex) {
+    if (currentIndex !== insertIndex) {
       if (insertIndex > 0) {
         const previousActivity = newData[insertIndex - 1];
         const movedActivityFromTime = adjustedActivity.fromDateTime;
         previousActivity.toDateTime = new Date(movedActivityFromTime.getTime());
       }
       
-      if (index > 0 && index < data.length) {
-        const activityAfterOriginalPosition = newData[index];
-        if (activityAfterOriginalPosition && index > 0) {
-          const activityBeforeOriginalPosition = newData[index - 1];
+      if (currentIndex > 0 && currentIndex < data.length) {
+        const activityAfterOriginalPosition = newData[currentIndex];
+        if (activityAfterOriginalPosition && currentIndex > 0) {
+          const activityBeforeOriginalPosition = newData[currentIndex - 1];
           if (activityBeforeOriginalPosition) {
             const nextActivityFromTime = new Date(activityAfterOriginalPosition.fromDateTime);
             activityBeforeOriginalPosition.toDateTime = new Date(nextActivityFromTime.getTime());
           }
         }
+      }
+    }
+    
+    if (currentIndex > 0) {
+      const potentialClonedActivity = newData[currentIndex - 1];
+      if (potentialClonedActivity && 
+          potentialClonedActivity.remarks?.includes('(Copy)')) {
+        potentialClonedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
       }
     }
     
@@ -223,12 +276,17 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   };
 
   const confirmDelete = () => {
-    if (!layTimeId || !activityToDelete) return;
+    if (!layTimeId || !activityToDelete || !data) return;
     
-    deletePortActivityMutation.mutate({
-      layTimeId,
-      activityId: activityToDelete.index.toString(),
-    });
+    // Simply remove the activity from the data without timing chain updates
+    const newData = [...data];
+    newData.splice(activityToDelete.index, 1);
+    
+    // Update the cache with the new data (with potential timing violations)
+    queryClient.setQueryData<PortActivity[]>(
+      qk.portActivity.list(layTimeId),
+      newData
+    );
     
     setDeleteDialogOpen(false);
     setActivityToDelete(null);
