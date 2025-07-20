@@ -161,34 +161,57 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     // Insert the activity at the correct position
     newData.splice(insertIndex, 0, activityToMove);
     
-    // Now adjust the fromDateTime to follow the sequential timing rule
+    // Now adjust timing for the moved activity and surrounding activities
     let adjustedActivity = { ...activityToMove };
     
+    // Ensure all date fields are Date objects
+    adjustedActivity.fromDateTime = new Date(adjustedActivity.fromDateTime);
+    adjustedActivity.toDateTime = new Date(adjustedActivity.toDateTime);
+    
+    // Step 1: Update previous activity's toDateTime to match moved activity's fromDateTime
     if (insertIndex > 0) {
-      // If not the first position, set fromDateTime to match previous activity's toDateTime
       const previousActivity = newData[insertIndex - 1];
-      const previousToTime = new Date(previousActivity.toDateTime);
+      const movedActivityFromTime = adjustedActivity.fromDateTime;
       
-      // Always update fromDateTime to maintain sequential timing (no tolerance check)
-      adjustedActivity.fromDateTime = new Date(previousToTime.getTime());
-      adjustedActivity.day = previousToTime.toISOString();
+      // Update previous activity's toDateTime
+      previousActivity.toDateTime = new Date(movedActivityFromTime.getTime());
       
-      // Calculate the original duration in milliseconds
-      const originalFromTime = new Date(activityToMove.fromDateTime);
-      const originalToTime = new Date(activityToMove.toDateTime);
-      const originalDurationMs = originalToTime.getTime() - originalFromTime.getTime();
-      
-      // Update toDateTime to maintain the original duration
-      adjustedActivity.toDateTime = new Date(previousToTime.getTime() + originalDurationMs);
-      
-      // Ensure toDateTime is not before fromDateTime
-      if (adjustedActivity.toDateTime.getTime() < adjustedActivity.fromDateTime.getTime()) {
-        adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
-        console.log(`Adjusted toDateTime to match fromDateTime to prevent negative duration`);
-      }
-      
-      console.log(`Adjusted fromDateTime to ${previousToTime.toISOString()} to maintain sequential timing`);
+      console.log(`Updated previous activity's toDateTime to ${movedActivityFromTime.toISOString()}`);
     }
+    
+    // Step 2: Update moved activity's toDateTime to match next activity's fromDateTime (if exists)
+    if (insertIndex < newData.length - 1) {
+      const nextActivity = newData[insertIndex + 1];
+      const nextActivityFromTime = new Date(nextActivity.fromDateTime);
+      const movedActivityFromTime = adjustedActivity.fromDateTime;
+      
+      // Only update if the next activity's fromDateTime is after the moved activity's fromDateTime
+      if (nextActivityFromTime.getTime() > movedActivityFromTime.getTime()) {
+        adjustedActivity.toDateTime = new Date(nextActivityFromTime.getTime());
+        console.log(`Updated moved activity's toDateTime to ${nextActivityFromTime.toISOString()}`);
+      } else {
+        // If next activity would create negative duration, keep original duration or set minimum duration
+        const originalDuration = new Date(activityToMove.toDateTime).getTime() - new Date(activityToMove.fromDateTime).getTime();
+        const minDuration = Math.max(originalDuration, 60 * 60 * 1000); // At least 1 hour
+        adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + minDuration);
+        console.log(`Used original/minimum duration to prevent negative duration`);
+      }
+    } else {
+      // If it's the last activity, keep the original duration or set a reasonable duration
+      const originalDuration = new Date(activityToMove.toDateTime).getTime() - new Date(activityToMove.fromDateTime).getTime();
+      adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + originalDuration);
+      
+      console.log(`Kept original duration for last activity`);
+    }
+    
+    // Ensure toDateTime is not before fromDateTime
+    if (adjustedActivity.toDateTime.getTime() < adjustedActivity.fromDateTime.getTime()) {
+      adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
+      console.log(`Adjusted toDateTime to match fromDateTime to prevent negative duration`);
+    }
+    
+    // Update the day field to match fromDateTime
+    adjustedActivity.day = adjustedActivity.fromDateTime.toISOString();
     
     // Update the activity in the array
     newData[insertIndex] = adjustedActivity;
@@ -199,7 +222,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       newData
     );
     
-    console.log(`Moved activity from index ${index} to position ${insertIndex} and adjusted timing`);
+    console.log(`Moved activity from index ${index} to position ${insertIndex} and adjusted timing connections`);
     
     setAdjustDialogOpen(false);
     setActivityToAdjust(null);
