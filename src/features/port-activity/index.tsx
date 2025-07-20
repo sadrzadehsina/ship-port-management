@@ -138,6 +138,9 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     const currentActivity = data[index];
     const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
     
+    // Get validation violations to avoid updating rows that need adjustment
+    const violations = validateSequentialTiming(data);
+    
     // Create a copy of the data array for manipulation
     const newData = [...data];
     
@@ -168,18 +171,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     adjustedActivity.fromDateTime = new Date(adjustedActivity.fromDateTime);
     adjustedActivity.toDateTime = new Date(adjustedActivity.toDateTime);
     
-    // Step 1: Update previous activity's toDateTime to match moved activity's fromDateTime
-    if (insertIndex > 0) {
-      const previousActivity = newData[insertIndex - 1];
-      const movedActivityFromTime = adjustedActivity.fromDateTime;
-      
-      // Update previous activity's toDateTime
-      previousActivity.toDateTime = new Date(movedActivityFromTime.getTime());
-      
-      console.log(`Updated previous activity's toDateTime to ${movedActivityFromTime.toISOString()}`);
-    }
-    
-    // Step 2: Update moved activity's toDateTime to match next activity's fromDateTime (if exists)
+    // Step 1: Update moved activity's toDateTime to match next activity's fromDateTime (if exists)
     if (insertIndex < newData.length - 1) {
       const nextActivity = newData[insertIndex + 1];
       const nextActivityFromTime = new Date(nextActivity.fromDateTime);
@@ -216,13 +208,66 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     // Update the activity in the array
     newData[insertIndex] = adjustedActivity;
     
+    // Step 2: Handle chain reaction - update timing connections for all affected rows
+    // After moving a row, update all connections to maintain sequential timing
+    
+    // Update all rows to connect properly with their next row (except the last one)
+    for (let i = 0; i < newData.length - 1; i++) {
+      const currentRow = newData[i];
+      const nextRow = newData[i + 1];
+      
+      // Skip if this is the row we just moved and positioned (it's already handled)
+      if (i === insertIndex) {
+        continue;
+      }
+      
+      // Check if current row had violations in the original data (before movement)
+      // We need to map back to original indices to check violations correctly
+      let originalIndex = i;
+      if (index < insertIndex) {
+        // Row moved down: rows after original position shifted up
+        if (i >= index) {
+          originalIndex = i + 1;
+        }
+      } else if (index > insertIndex) {
+        // Row moved up: rows after insert position shifted down
+        if (i > insertIndex) {
+          originalIndex = i - 1;
+        }
+      }
+      
+      const currentHasViolation = violations.includes(originalIndex);
+      
+      // Only update if current row doesn't have violations
+      if (!currentHasViolation && nextRow) {
+        const nextRowFromTime = new Date(nextRow.fromDateTime);
+        currentRow.toDateTime = new Date(nextRowFromTime.getTime());
+        console.log(`Chain update: Row ${i} (orig: ${originalIndex}) toDateTime → Row ${i + 1} fromDateTime: ${nextRowFromTime.toISOString()}`);
+      } else if (currentHasViolation) {
+        console.log(`Skipped updating Row ${i} (orig: ${originalIndex}) because it has violations`);
+      }
+    }
+    
+    // Step 3: Connect the previous row to the moved activity (if exists and doesn't have violations)
+    if (insertIndex > 0) {
+      const previousActivity = newData[insertIndex - 1];
+      // For the previous row, use its new index in the violations check
+      const previousHasViolation = violations.includes(insertIndex - 1);
+      
+      if (!previousHasViolation) {
+        const movedActivityFromTime = adjustedActivity.fromDateTime;
+        previousActivity.toDateTime = new Date(movedActivityFromTime.getTime());
+        console.log(`Updated previous activity's toDateTime to connect to moved activity: ${movedActivityFromTime.toISOString()}`);
+      }
+    }
+    
     // Optimistically update the cache with the reordered and adjusted data
     queryClient.setQueryData<PortActivity[]>(
       qk.portActivity.list(layTimeId),
       newData
     );
     
-    console.log(`Moved activity from index ${index} to position ${insertIndex} and adjusted timing connections`);
+    console.log(`Moved activity from index ${index} to position ${insertIndex} and updated timing chain`);
     
     setAdjustDialogOpen(false);
     setActivityToAdjust(null);

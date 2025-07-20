@@ -44,11 +44,11 @@ export const handlers = [
       deductions: activityToClone.deductions || faker.lorem.sentence(),
     });
   }),
-  http.delete("/v1/api/port-activity/:layTimeId/:activityId", () => {
+  http.delete("/v1/api/port-activity/:layTimeId/delete/:activityId", () => {
     // Return success response for delete
     return new HttpResponse(null, { status: 204 });
   }),
-  http.patch("/v1/api/port-activity/:layTimeId/:activityIndex/percentage", async ({ request }) => {
+  http.patch("/v1/api/port-activity/update/:layTimeId/:activityIndex/percentage", async ({ request }) => {
     const { percentage } = await request.json() as { percentage: number };
     
     // For percentage updates, we should only return the updated percentage
@@ -58,7 +58,7 @@ export const handlers = [
       percentage, // Only the updated field
     });
   }),
-    http.patch("/v1/api/port-activity/:layTimeId/:activityIndex/datetime", async ({ request }) => {
+    http.patch("/v1/api/port-activity/update/:layTimeId/:activityIndex/datetime", async ({ request }) => {
     const { field, value } = await request.json() as { field: 'fromDateTime' | 'toDateTime', value: string };
     
     // Only return the updated datetime field to avoid corrupting other fields
@@ -66,7 +66,7 @@ export const handlers = [
       [field]: value, // Only the updated field
     });
   }),
-    http.patch("/v1/api/port-activity/:layTimeId/:activityIndex/activity-type", async ({ request }) => {
+    http.patch("/v1/api/port-activity/update/:layTimeId/:activityIndex/activity-type", async ({ request }) => {
     const { activityType } = await request.json() as { activityType: string };
     
     // Only return the updated activity type to avoid corrupting other fields
@@ -74,7 +74,7 @@ export const handlers = [
       activityType, // Only the updated field
     });
   }),
-  http.patch("/v1/api/port-activity/:layTimeId/:activityIndex/adjust", async ({ request }) => {
+  http.patch("/v1/api/port-activity/update/:layTimeId/:activityIndex/adjust", async ({ request }) => {
     const adjustedActivity = await request.json() as any;
     // Return the adjusted activity
     return HttpResponse.json(adjustedActivity);
