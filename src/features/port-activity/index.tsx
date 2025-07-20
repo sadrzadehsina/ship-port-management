@@ -408,7 +408,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
           {addPortActivityMutation.isPending ? 'Adding...' : 'Add Event'}
         </Button>
       </div>
-      <DataTable data={data} columns={getColumns(handleDeleteEvent, handleCloneEvent, handleUpdatePercentage, handleUpdateDateTime, handleUpdateActivityType, handleAdjustActivity, validationViolations)} validationViolations={validationViolations} />
+      <DataTable data={data || []} columns={getColumns(handleDeleteEvent, handleCloneEvent, handleUpdatePercentage, handleUpdateDateTime, handleUpdateActivityType, handleAdjustActivity, validationViolations)} validationViolations={validationViolations} />
       {isEmpty && (
         <div className="text-center text-gray-500 dark:text-gray-400 py-8">
           <div className="mb-2">📋</div>

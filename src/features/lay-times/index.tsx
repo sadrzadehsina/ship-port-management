@@ -28,7 +28,7 @@ export function LayTimes({ onRowSelect, selectedRowId }: LayTimesProps) {
         Lay Times
       </h1>
       <DataTable
-        data={data}
+        data={data || []}
         columns={columns}
         onRowSelect={onRowSelect}
         selectedRowId={selectedRowId}
