@@ -4,8 +4,7 @@ A comprehensive port activity management system with sequential timing validatio
 
 ## 🚀 Live Demo
 
-- **GitHub Pages (Recommended):** [https://sadrzadehsina.github.io/ship-port-management/](https://sadrzadehsina.github.io/ship-port-management/)
-- **Vercel:** [https://ship-port-management-owa1-5xm5pxunj-sina-sadrzadehs-projects.vercel.app/](https://ship-port-management-owa1-5xm5pxunj-sina-sadrzadehs-projects.vercel.app/)
+- **GitHub Pages:** [https://sadrzadehsina.github.io/ship-port-management/](https://sadrzadehsina.github.io/ship-port-management/)
 
 ## ✨ Features
 
@@ -49,25 +48,21 @@ npm run build
 
 ## 🌐 Deployment
 
-### GitHub Pages (Recommended)
+### GitHub Pages
 Automatic deployment via GitHub Actions:
+
 1. Push to `main` branch
 2. GitHub Actions automatically builds and deploys
 3. Available at: `https://username.github.io/ship-port-management/`
 
-### Vercel
-Manual deployment:
-1. Connect repository to Vercel
-2. Configure build settings
-3. Deploy with serverless functions
-
 ## 🔧 Configuration
 
 ### Environment Detection
-The app automatically detects the deployment environment:
+
+The app is configured for GitHub Pages deployment:
+
 - **Development:** Uses MSW with `/v1/api/` routes
-- **GitHub Pages:** Uses MSW with `/v1/api/` routes  
-- **Vercel:** Uses serverless functions with `/api/` routes
+- **GitHub Pages:** Uses MSW with `/v1/api/` routes
 
 ### Mock Data
 - Powered by Faker.js with hash-based seeding for consistent data
@@ -107,8 +102,8 @@ The app automatically detects the deployment environment:
 - **React Hook Form** - Form state management
 
 ### API Layer
-- **Development:** MSW for local API simulation
-- **Production:** Vercel serverless functions or MSW on GitHub Pages
+
+- **All Environments:** MSW for API simulation with realistic data
 
 ## 📋 API Endpoints
 

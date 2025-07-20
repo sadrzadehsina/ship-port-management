@@ -1,15 +1,7 @@
-// Use different endpoints for development vs production
+// Use MSW endpoints for both development and production (GitHub Pages)
 const getEndpoint = (path: string) => {
-  const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.includes("github.io");
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  
-  if (isDevelopment || isGitHubPages) {
-    // In development or GitHub Pages, MSW intercepts these paths
-    return `/v1/api${path}`;
-  } else {
-    // In production (Vercel), use Vercel API routes
-    return `/api${path}`;
-  }
+  // Always use MSW with /v1/api/ routes since we're GitHub Pages only
+  return `/v1/api${path}`;
 };
 
 const layTime = {
