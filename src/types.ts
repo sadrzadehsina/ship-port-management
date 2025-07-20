@@ -1,17 +1,20 @@
-export enum ErrorStatus {
-  BAD_REQUEST = 400,
-  NOT_AUTHENTICATED = 401,
-  NOT_AUTHORIZED = 403,
-  NOT_FOUND = 404,
-  DUPLICATE_ENTITY = 409,
-  SERVER_ERROR = 500,
-}
+export const ErrorStatus = {
+  BAD_REQUEST: 400,
+  NOT_AUTHENTICATED: 401,
+  NOT_AUTHORIZED: 403,
+  NOT_FOUND: 404,
+  DUPLICATE_ENTITY: 409,
+  SERVER_ERROR: 500,
+} as const;
 
-export enum SuccessStatus {
-  ACCEPTED = 200,
-  CREATED = 201,
-  UPDATED = 204,
-}
+export const SuccessStatus = {
+  ACCEPTED: 200,
+  CREATED: 201,
+  UPDATED: 204,
+} as const;
+
+export type ErrorStatus = typeof ErrorStatus[keyof typeof ErrorStatus];
+export type SuccessStatus = typeof SuccessStatus[keyof typeof SuccessStatus];
 
 export interface IError {
   message?: string;

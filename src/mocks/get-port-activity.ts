@@ -54,14 +54,8 @@ export function makeData(length: number, layTimeId: string = 'default'): PortAct
     const activity = newPortActivity(currentDateTime, layTimeId, i);
     activities.push(activity);
     
-    // For testing: Create a gap after the first activity to test validation
-    if (i === 0 && length > 1) {
-      // Add a 2-hour gap after the first activity
-      currentDateTime = new Date(activity.toDateTime.getTime() + 2 * 60 * 60 * 1000);
-    } else {
-      // Next activity starts where this one ends (normal sequential behavior)
-      currentDateTime = activity.toDateTime;
-    }
+    // Next activity starts where this one ends (sequential behavior)
+    currentDateTime = activity.toDateTime;
   }
   
   return activities;

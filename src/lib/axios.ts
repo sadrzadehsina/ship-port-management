@@ -17,7 +17,10 @@ axios.interceptors.request.use(
 
 axios.interceptors.response.use(
   (response) => {
-    dispatchSuccess(response);
+    dispatchSuccess({
+      status: response.status as any,
+      message: response.statusText
+    });
     return response.data;
   },
   (error: IError) => {
