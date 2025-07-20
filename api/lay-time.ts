@@ -1,3 +1,4 @@
+import { VercelRequest, VercelResponse } from '@vercel/node';
 import { faker } from '@faker-js/faker';
 
 // Copy of LayTime type (simplified for API use)
@@ -47,7 +48,7 @@ function makeData(length: number): LayTime[] {
   return Array.from({ length }, () => newLayTime());
 }
 
-export default function handler(req: any, res: any) {
+export default function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') {
     const data = makeData(3);
     res.status(200).json(data);

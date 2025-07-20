@@ -1,0 +1,13 @@
+{
+  "buildCommand": "npm run build",
+  "functions": {
+    "api/**/*.{js,ts}": {
+      "runtime": "@vercel/node"
+    }
+  },
+  "installCommand": "npm install --legacy-peer-deps",
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "trailingSlash": false
+}

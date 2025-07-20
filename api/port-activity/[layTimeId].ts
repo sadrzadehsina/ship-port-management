@@ -1,3 +1,4 @@
+import { VercelRequest, VercelResponse } from '@vercel/node';
 import { faker } from '@faker-js/faker';
 
 // Copy of PortActivity type (simplified for API use)
@@ -87,30 +88,39 @@ function makeData(layTimeId: string = 'default'): PortActivity[] {
   return activities;
 }
 
-export default function handler(req: any, res: any) {
-  const { layTimeId } = req.query;
-  
-  if (req.method === 'GET') {
-    const data = makeData(layTimeId || 'default');
-    res.status(200).json(data);
-  } else if (req.method === 'POST') {
-    // Handle add activity
-    const newActivity = req.body;
+export default function handler(req: VercelRequest, res: VercelResponse) {
+  try {
+    const { layTimeId } = req.query;
+    const layTimeIdString = Array.isArray(layTimeId) ? layTimeId[0] : layTimeId || 'default';
     
-    // Use a seed based on layTimeId and current timestamp for new activities
-    const seed = Math.abs(layTimeId.split('').reduce((a: number, b: string) => a + b.charCodeAt(0), 0)) + Date.now();
-    faker.seed(seed);
-    
-    // Return the activity with any server-side modifications
-    res.status(200).json({
-      ...newActivity,
-      remarks: newActivity.remarks || faker.lorem.sentence(),
-      deductions: newActivity.deductions || faker.lorem.sentence(),
+    if (req.method === 'GET') {
+      const data = makeData(layTimeIdString);
+      res.status(200).json(data);
+    } else if (req.method === 'POST') {
+      // Handle add activity
+      const newActivity = req.body;
+      
+      // Use a seed based on layTimeId and current timestamp for new activities
+      const seed = Math.abs(layTimeIdString.split('').reduce((a: number, b: string) => a + b.charCodeAt(0), 0)) + Date.now();
+      faker.seed(seed);
+      
+      // Return the activity with any server-side modifications
+      res.status(200).json({
+        ...newActivity,
+        remarks: newActivity.remarks || faker.lorem.sentence(),
+        deductions: newActivity.deductions || faker.lorem.sentence(),
+      });
+    } else if (req.method === 'DELETE') {
+      // Handle delete activity
+      res.status(204).end();
+    } else {
+      res.status(405).json({ message: 'Method not allowed' });
+    }
+  } catch (error) {
+    console.error('API Error in port-activity:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
-  } else if (req.method === 'DELETE') {
-    // Handle delete activity
-    res.status(204).end();
-  } else {
-    res.status(405).json({ message: 'Method not allowed' });
   }
 }
