@@ -1,6 +1,4 @@
-// Use MSW endpoints for both development and production (GitHub Pages)
 const getEndpoint = (path: string) => {
-  // Always use MSW with /v1/api/ routes since we're GitHub Pages only
   return `/v1/api${path}`;
 };
 

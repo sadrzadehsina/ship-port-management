@@ -37,7 +37,6 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [activityToAdjust, setActivityToAdjust] = useState<{ index: number; activity: PortActivity } | null>(null);
   
-  // Always call all hooks at the top level
   const { data, isLoading, error } = useAllPortActivities(layTimeId || '');
   const addPortActivityMutation = useAddPortActivity();
   const deletePortActivityMutation = useDeletePortActivity();
@@ -46,7 +45,6 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   const updateDateTimeMutation = useUpdatePortActivityDateTime();
   const updateActivityTypeMutation = useUpdatePortActivityType();
   
-  // Show empty table with headers when no layTimeId is selected
   if (!layTimeId) {
     return (
       <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
@@ -68,11 +66,9 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     );
   }
 
-  // Function to validate sequential timing and detect rows that need adjustment
   const validateSequentialTiming = (activities: PortActivity[]) => {
     const violations: number[] = [];
     
-    // Check each row starting from the second one (index 1)
     for (let i = 1; i < activities.length; i++) {
       const currentActivity = activities[i];
       const previousActivity = activities[i - 1];
@@ -80,8 +76,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
       const previousToTime = new Date(previousActivity.toDateTime).getTime();
       
-      // If current row's fromDateTime is not exactly the same as previous row's toDateTime
-      if (Math.abs(currentFromTime - previousToTime) > 60000) { // 1 minute tolerance
+      if (Math.abs(currentFromTime - previousToTime) > 60000) {
         violations.push(i);
       }
     }
@@ -89,7 +84,6 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     return violations;
   };
 
-  // Get validation violations
   const validationViolations = data ? validateSequentialTiming(data) : [];
 
   const handleUpdatePercentage = (index: number, newPercentage: number) => {
@@ -138,16 +132,12 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     const currentActivity = data[index];
     const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
     
-    // Get validation violations to avoid updating rows that need adjustment
     const violations = validateSequentialTiming(data);
     
-    // Create a copy of the data array for manipulation
     const newData = [...data];
     
-    // Remove the activity from its current position
     const [activityToMove] = newData.splice(index, 1);
     
-    // Find the correct position to insert this activity based on chronological order
     let insertIndex = 0;
     
     for (let i = 0; i < newData.length; i++) {
@@ -158,79 +148,55 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
         insertIndex = i;
         break;
       }
-      insertIndex = i + 1; // If not found before any activity, insert at the end
+      insertIndex = i + 1;
     }
     
-    // Insert the activity at the correct position
     newData.splice(insertIndex, 0, activityToMove);
     
-    // Now adjust timing for the moved activity and surrounding activities
     let adjustedActivity = { ...activityToMove };
     
-    // Ensure all date fields are Date objects
     adjustedActivity.fromDateTime = new Date(adjustedActivity.fromDateTime);
     adjustedActivity.toDateTime = new Date(adjustedActivity.toDateTime);
     
-    // Step 1: Update moved activity's toDateTime to match next activity's fromDateTime (if exists)
     if (insertIndex < newData.length - 1) {
       const nextActivity = newData[insertIndex + 1];
       const nextActivityFromTime = new Date(nextActivity.fromDateTime);
       const movedActivityFromTime = adjustedActivity.fromDateTime;
       
-      // Only update if the next activity's fromDateTime is after the moved activity's fromDateTime
       if (nextActivityFromTime.getTime() > movedActivityFromTime.getTime()) {
         adjustedActivity.toDateTime = new Date(nextActivityFromTime.getTime());
-        console.log(`Updated moved activity's toDateTime to ${nextActivityFromTime.toISOString()}`);
       } else {
-        // If next activity would create negative duration, keep original duration or set minimum duration
         const originalDuration = new Date(activityToMove.toDateTime).getTime() - new Date(activityToMove.fromDateTime).getTime();
-        const minDuration = Math.max(originalDuration, 60 * 60 * 1000); // At least 1 hour
+        const minDuration = Math.max(originalDuration, 60 * 60 * 1000);
         adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + minDuration);
-        console.log(`Used original/minimum duration to prevent negative duration`);
       }
     } else {
-      // If it's the last activity, keep the original duration or set a reasonable duration
       const originalDuration = new Date(activityToMove.toDateTime).getTime() - new Date(activityToMove.fromDateTime).getTime();
       adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + originalDuration);
-      
-      console.log(`Kept original duration for last activity`);
     }
     
-    // Ensure toDateTime is not before fromDateTime
     if (adjustedActivity.toDateTime.getTime() < adjustedActivity.fromDateTime.getTime()) {
       adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
-      console.log(`Adjusted toDateTime to match fromDateTime to prevent negative duration`);
     }
     
-    // Update the day field to match fromDateTime
     adjustedActivity.day = adjustedActivity.fromDateTime.toISOString();
     
-    // Update the activity in the array
     newData[insertIndex] = adjustedActivity;
     
-    // Step 2: Handle chain reaction - update timing connections for all affected rows
-    // After moving a row, update all connections to maintain sequential timing
-    
-    // Update all rows to connect properly with their next row (except the last one)
     for (let i = 0; i < newData.length - 1; i++) {
       const currentRow = newData[i];
       const nextRow = newData[i + 1];
       
-      // Skip if this is the row we just moved and positioned (it's already handled)
       if (i === insertIndex) {
         continue;
       }
       
-      // Check if current row had violations in the original data (before movement)
-      // We need to map back to original indices to check violations correctly
       let originalIndex = i;
       if (index < insertIndex) {
-        // Row moved down: rows after original position shifted up
         if (i >= index) {
           originalIndex = i + 1;
         }
       } else if (index > insertIndex) {
-        // Row moved up: rows after insert position shifted down
         if (i > insertIndex) {
           originalIndex = i - 1;
         }
@@ -238,36 +204,26 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       
       const currentHasViolation = violations.includes(originalIndex);
       
-      // Only update if current row doesn't have violations
       if (!currentHasViolation && nextRow) {
         const nextRowFromTime = new Date(nextRow.fromDateTime);
         currentRow.toDateTime = new Date(nextRowFromTime.getTime());
-        console.log(`Chain update: Row ${i} (orig: ${originalIndex}) toDateTime → Row ${i + 1} fromDateTime: ${nextRowFromTime.toISOString()}`);
-      } else if (currentHasViolation) {
-        console.log(`Skipped updating Row ${i} (orig: ${originalIndex}) because it has violations`);
       }
     }
     
-    // Step 3: Connect the previous row to the moved activity (if exists and doesn't have violations)
     if (insertIndex > 0) {
       const previousActivity = newData[insertIndex - 1];
-      // For the previous row, use its new index in the violations check
       const previousHasViolation = violations.includes(insertIndex - 1);
       
       if (!previousHasViolation) {
         const movedActivityFromTime = adjustedActivity.fromDateTime;
         previousActivity.toDateTime = new Date(movedActivityFromTime.getTime());
-        console.log(`Updated previous activity's toDateTime to connect to moved activity: ${movedActivityFromTime.toISOString()}`);
       }
     }
     
-    // Optimistically update the cache with the reordered and adjusted data
     queryClient.setQueryData<PortActivity[]>(
       qk.portActivity.list(layTimeId),
       newData
     );
-    
-    console.log(`Moved activity from index ${index} to position ${insertIndex} and updated timing chain`);
     
     setAdjustDialogOpen(false);
     setActivityToAdjust(null);
@@ -307,17 +263,14 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     if (!layTimeId || !data) return;
     
     const activityToClone = data[index];
-    const insertIndex = index; // Insert at the same position (above the original)
+    const insertIndex = index;
     
-    // Calculate the new fromDateTime based on sequential timing
     let newFromDateTime: Date;
     
     if (index === 0) {
-      // If cloning the first item, start with a time before it
       const originalFromTime = new Date(activityToClone.fromDateTime);
       newFromDateTime = new Date(originalFromTime.getTime() - activityToClone.duration * 60 * 60 * 1000);
     } else {
-      // If cloning any other item, start from the previous item's toDateTime
       const previousActivity = data[index - 1];
       newFromDateTime = new Date(previousActivity.toDateTime);
     }
@@ -343,20 +296,16 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   const handleAddEvent = (existingData: PortActivity[]) => {
     if (!layTimeId) return;
 
-    // Calculate the next fromDateTime based on the last activity's toDateTime
     let nextFromDateTime: Date;
     
     if (existingData.length === 0) {
-      // If no existing data, start with a recent date
       nextFromDateTime = faker.date.recent();
     } else {
-      // Start from the last activity's toDateTime
       const lastActivity = existingData[existingData.length - 1];
       nextFromDateTime = new Date(lastActivity.toDateTime);
     }
 
-    const duration = faker.number.int({ min: 1, max: 24 }); // duration in hours
-    // Set toDateTime to be exactly the same as fromDateTime initially
+    const duration = faker.number.int({ min: 1, max: 24 });
     const toDateTime = new Date(nextFromDateTime.getTime());
 
     const newActivity: PortActivity = {
@@ -373,7 +322,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       ]),
       fromDateTime: nextFromDateTime,
       duration,
-      percentage: faker.helpers.arrayElement([0, 50, 100]), // Only 0, 50, or 100
+      percentage: faker.helpers.arrayElement([0, 50, 100]),
       toDateTime,
       remarks: faker.lorem.sentence(),
       deductions: faker.lorem.sentence(),
@@ -587,20 +536,15 @@ const getColumns = (
         return <span className="text-gray-400">Invalid</span>;
       }
       
-      // Calculate the difference in milliseconds
-      const diffMs = toDateTime.getTime() - fromDateTime.getTime();
-      
-      if (diffMs < 0) {
+      const diffMs = new Date(toDateTime).getTime() - new Date(fromDateTime).getTime();      if (diffMs < 0) {
         return <span className="text-red-500">Invalid</span>;
       }
       
-      // Convert to days, hours, and minutes
       const diffMinutes = Math.floor(diffMs / (1000 * 60));
       const days = Math.floor(diffMinutes / (24 * 60));
       const hours = Math.floor((diffMinutes % (24 * 60)) / 60);
       const minutes = diffMinutes % 60;
       
-      // Format as "01d 07:30" or "07:30" if no days
       const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
       const formattedDuration = days > 0 ? `${days.toString().padStart(2, '0')}d ${formattedTime}` : formattedTime;
       
@@ -665,7 +609,6 @@ const getColumns = (
         return <span className="text-gray-400">Invalid</span>;
       }
       
-      // Calculate the total duration in minutes
       const totalDiffMs = toDateTime.getTime() - fromDateTime.getTime();
       
       if (totalDiffMs < 0) {
@@ -674,15 +617,12 @@ const getColumns = (
       
       const totalDiffMinutes = Math.floor(totalDiffMs / (1000 * 60));
       
-      // Calculate deduction time: percentage * total duration
       const deductionMinutes = Math.floor((percentage / 100) * totalDiffMinutes);
       
-      // Convert to days, hours, and minutes
       const days = Math.floor(deductionMinutes / (24 * 60));
       const hours = Math.floor((deductionMinutes % (24 * 60)) / 60);
       const minutes = deductionMinutes % 60;
       
-      // Format as "01d 07:30" or "07:30" if no days
       const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
       const formattedDeduction = days > 0 ? `${days.toString().padStart(2, '0')}d ${formattedTime}` : formattedTime;
       

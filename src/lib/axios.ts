@@ -4,9 +4,7 @@ import type { IError } from "@/types";
 
 import { dispatchError, dispatchSuccess } from "@/lib/utils";
 
-// Simplified for GitHub Pages deployment with MSW
 const getBaseURL = () => {
-  // Always use empty base URL since MSW handles all API requests
   return '';
 };
 

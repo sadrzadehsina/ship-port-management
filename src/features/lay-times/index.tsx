@@ -25,7 +25,7 @@ export function LayTimes({ onRowSelect, selectedRowId }: LayTimesProps) {
   return (
     <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
       <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2 text-gray-900 dark:text-gray-100">
-        Lay Times
+        Lay Time
       </h1>
       <DataTable
         data={data || []}
