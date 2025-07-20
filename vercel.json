@@ -1,13 +1,7 @@
 {
   "buildCommand": "npm run build",
-  "functions": {
-    "api/**/*.{js,ts}": {
-      "runtime": "nodejs20.x"
-    }
-  },
   "installCommand": "npm install --legacy-peer-deps",
   "env": {
     "NODE_ENV": "production"
-  },
-  "trailingSlash": false
+  }
 }
