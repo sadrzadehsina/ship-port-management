@@ -5,7 +5,11 @@ import "./global.css";
 import App from "./app";
 
 async function enableMocking() {
-  if (process.env.NODE_ENV !== "development") {
+  // Enable mocking in development OR when no backend is available (like GitHub Pages)
+  const isGitHubPages = window.location.hostname.includes("github.io");
+  const isDevelopment = process.env.NODE_ENV === "development";
+  
+  if (!isDevelopment && !isGitHubPages) {
     return;
   }
 
