@@ -17,7 +17,7 @@ export function useAddPortActivity() {
 
   return useMutation<PortActivity, AxiosError, AddPortActivityData>({
     mutationFn: async ({ layTimeId, activity }) => {
-      return axios.post(portActivity.getAll(layTimeId), activity);
+      return axios.post(portActivity.add(layTimeId), activity);
     },
     onSuccess: (newActivity, { layTimeId }) => {
       // Update the cache with the new activity

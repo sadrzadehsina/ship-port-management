@@ -18,7 +18,7 @@ export function useUpdatePortActivityType() {
 
   return useMutation<Partial<PortActivity>, AxiosError, UpdatePortActivityTypeData>({
     mutationFn: async ({ layTimeId, activityIndex, activityType }) => {
-      return axios.patch(`${portActivity.getAll(layTimeId)}/${activityIndex}/activity-type`, {
+      return axios.patch(portActivity.updateActivityType(layTimeId, activityIndex), {
         activityType,
       });
     },

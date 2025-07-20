@@ -19,7 +19,7 @@ export function useUpdatePortActivityDateTime() {
 
   return useMutation<Partial<PortActivity>, AxiosError, UpdatePortActivityDateTimeData>({
     mutationFn: async ({ layTimeId, activityIndex, field, dateTime }) => {
-      return axios.patch(`${portActivity.getAll(layTimeId)}/${activityIndex}/datetime`, {
+      return axios.patch(portActivity.updateDateTime(layTimeId, activityIndex), {
         field,
         value: dateTime.toISOString(),
       });

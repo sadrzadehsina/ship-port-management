@@ -18,7 +18,7 @@ export function useAdjustPortActivity() {
 
   return useMutation<PortActivity, AxiosError, AdjustPortActivityData>({
     mutationFn: async ({ layTimeId, activityIndex, adjustedActivity }) => {
-      return axios.patch(`${portActivity.getAll(layTimeId)}/${activityIndex}/adjust`, adjustedActivity);
+      return axios.patch(portActivity.adjust(layTimeId, activityIndex), adjustedActivity);
     },
     onSuccess: (updatedActivity, { layTimeId, activityIndex }) => {
       // Update the cache with the adjusted activity

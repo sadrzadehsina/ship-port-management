@@ -19,7 +19,7 @@ export function useClonePortActivity() {
   return useMutation<PortActivity, AxiosError, ClonePortActivityData>({
     mutationFn: async ({ layTimeId, activity }) => {
       // Clone the activity (the backend would handle this)
-      return axios.post(`${portActivity.getAll(layTimeId)}/clone`, activity);
+      return axios.post(portActivity.clone(layTimeId), activity);
     },
     onSuccess: (clonedActivity, { layTimeId, insertIndex }) => {
       // Update the cache by inserting the cloned activity at the correct position

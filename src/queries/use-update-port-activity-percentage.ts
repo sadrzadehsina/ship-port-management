@@ -18,7 +18,7 @@ export function useUpdatePortActivityPercentage() {
 
   return useMutation<Partial<PortActivity>, AxiosError, UpdatePortActivityPercentageData>({
     mutationFn: async ({ layTimeId, activityIndex, percentage }) => {
-      return axios.patch(`${portActivity.getAll(layTimeId)}/${activityIndex}/percentage`, {
+      return axios.patch(portActivity.updatePercentage(layTimeId, activityIndex), {
         percentage,
       });
     },

@@ -17,7 +17,7 @@ export function useDeletePortActivity() {
 
   return useMutation<void, AxiosError, DeletePortActivityData>({
     mutationFn: async ({ layTimeId, activityId }) => {
-      return axios.delete(`${portActivity.getAll(layTimeId)}/${activityId}`);
+      return axios.delete(portActivity.delete(layTimeId, activityId));
     },
     onSuccess: (_, { layTimeId, activityId }) => {
       // Update the cache by removing the deleted activity
