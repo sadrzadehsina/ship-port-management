@@ -35,7 +35,7 @@ export function DataTable<T extends Record<string, any>>({
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <TableHead key={header.id} className="bg-gray-100">
+                <TableHead key={header.id} className="bg-gray-100 dark:bg-gray-800">
                   {header.isPlaceholder
                     ? null
                     : flexRender(
@@ -56,7 +56,7 @@ export function DataTable<T extends Record<string, any>>({
             return (
               <TableRow 
                 key={row.id}
-                className={`${isSelected ? 'bg-blue-50 border-blue-200' : hasViolation ? '!bg-red-200 border-red-400' : 'hover:bg-gray-50'} ${onRowSelect ? 'cursor-pointer' : ''}`}
+                className={`${isSelected ? 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800' : hasViolation ? '!bg-red-200 dark:!bg-red-900 border-red-400 dark:border-red-600' : 'hover:bg-gray-50 dark:hover:bg-gray-800'} ${onRowSelect ? 'cursor-pointer' : ''}`}
                 onClick={() => onRowSelect?.(row.original)}
               >
                 {row.getVisibleCells().map((cell) => (

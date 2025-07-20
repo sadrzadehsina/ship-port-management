@@ -1,15 +1,27 @@
 import { faker } from "@faker-js/faker";
 import { createColumnHelper } from "@tanstack/react-table";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { MdDelete, MdContentCopy, MdAutoFixHigh } from "react-icons/md";
 
 import type { PortActivity } from "@/types";
+import * as qk from "@/query-keys";
 
 import { DataTable } from "@/components/data-table";
 import { DateTimePicker } from "@/components/date-time-picker";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogFooter, 
+  DialogHeader, 
+  DialogTitle 
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { useAddPortActivity } from "@/queries/use-add-port-activity";
 import { useAllPortActivities } from "@/queries/use-all-port-activities";
 import { useClonePortActivity } from "@/queries/use-clone-port-activity";
 import { useDeletePortActivity } from "@/queries/use-delete-port-activity";
-import { useAdjustPortActivity } from "@/queries/use-adjust-port-activity";
 import { useUpdatePortActivityType } from "@/queries/use-update-port-activity-type";
 import { useUpdatePortActivityDateTime } from "@/queries/use-update-port-activity-datetime";
 import { useUpdatePortActivityPercentage } from "@/queries/use-update-port-activity-percentage";
@@ -19,42 +31,48 @@ type PortActivityProps = {
 };
 
 export function PortActivity({ layTimeId }: PortActivityProps) {
-  // Show empty table with headers when no layTimeId is selected
-  if (!layTimeId) {
-    return (
-      <div className="flex flex-col gap-2 bg-white p-4 rounded-lg shadow">
-        <div className="flex items-center justify-between">
-          <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2">
-            Port Activity
-          </h1>
-          <button
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-            disabled
-          >
-            Add Event
-          </button>
-        </div>
-        <DataTable data={[] as PortActivity[]} columns={getColumns(() => {}, () => {}, () => {}, () => {}, () => {}, () => {}, [])} />
-        <div className="text-center text-gray-500 py-4">
-          Select a lay time row to view port activities
-        </div>
-      </div>
-    );
-  }
-
-  const { data, isLoading, error } = useAllPortActivities(layTimeId);
+  const queryClient = useQueryClient();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [activityToDelete, setActivityToDelete] = useState<{ index: number; activity: PortActivity } | null>(null);
+  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  const [activityToAdjust, setActivityToAdjust] = useState<{ index: number; activity: PortActivity } | null>(null);
+  
+  // Always call all hooks at the top level
+  const { data, isLoading, error } = useAllPortActivities(layTimeId || '');
   const addPortActivityMutation = useAddPortActivity();
   const deletePortActivityMutation = useDeletePortActivity();
   const clonePortActivityMutation = useClonePortActivity();
   const updatePercentageMutation = useUpdatePortActivityPercentage();
   const updateDateTimeMutation = useUpdatePortActivityDateTime();
   const updateActivityTypeMutation = useUpdatePortActivityType();
-  const adjustPortActivityMutation = useAdjustPortActivity();
+  
+  // Show empty table with headers when no layTimeId is selected
+  if (!layTimeId) {
+    return (
+      <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
+        <div className="flex items-center justify-between">
+          <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2 text-gray-900 dark:text-gray-100">
+            Port Activity
+          </h1>
+          <Button
+            disabled
+          >
+            Add Event
+          </Button>
+        </div>
+        <DataTable data={[] as PortActivity[]} columns={getColumns(() => {}, () => {}, () => {}, () => {}, () => {}, () => {}, [])} />
+        <div className="text-center text-gray-500 dark:text-gray-400 py-4">
+          Select a lay time row to view port activities
+        </div>
+      </div>
+    );
+  }
 
-  // Function to validate sequential timing
+  // Function to validate sequential timing and detect rows that need adjustment
   const validateSequentialTiming = (activities: PortActivity[]) => {
     const violations: number[] = [];
     
+    // Check each row starting from the second one (index 1)
     for (let i = 1; i < activities.length; i++) {
       const currentActivity = activities[i];
       const previousActivity = activities[i - 1];
@@ -62,7 +80,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
       const previousToTime = new Date(previousActivity.toDateTime).getTime();
       
-      // Check if current row's fromDateTime doesn't match previous row's toDateTime
+      // If current row's fromDateTime is not exactly the same as previous row's toDateTime
       if (Math.abs(currentFromTime - previousToTime) > 60000) { // 1 minute tolerance
         violations.push(i);
       }
@@ -108,70 +126,113 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   const handleAdjustActivity = (index: number) => {
     if (!layTimeId || !data) return;
     
+    const activity = data[index];
+    setActivityToAdjust({ index, activity });
+    setAdjustDialogOpen(true);
+  };
+
+  const confirmAdjust = () => {
+    if (!layTimeId || !data || !activityToAdjust) return;
+    
+    const index = activityToAdjust.index;
     const currentActivity = data[index];
+    const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
     
-    if (index === 0) return; // Can't adjust first row
+    // Create a copy of the data array for manipulation
+    const newData = [...data];
     
-    // Find the last row that meets the sequential rule
-    let lastValidIndex = -1;
+    // Remove the activity from its current position
+    const [activityToMove] = newData.splice(index, 1);
     
-    // Check from the beginning to find the last valid row before the violation
-    for (let i = 0; i < index; i++) {
-      if (i === 0) {
-        // First row is always valid as a starting point
-        lastValidIndex = 0;
-      } else {
-        const currentRow = data[i];
-        const previousRow = data[i - 1];
-        
-        const currentFromTime = new Date(currentRow.fromDateTime).getTime();
-        const previousToTime = new Date(previousRow.toDateTime).getTime();
-        
-        // Check if this row follows the sequential rule (1 minute tolerance)
-        if (Math.abs(currentFromTime - previousToTime) <= 60000) {
-          lastValidIndex = i;
-        } else {
-          // This row also violates the rule, so the last valid row is the previous one
-          break;
-        }
+    // Find the correct position to insert this activity based on chronological order
+    let insertIndex = 0;
+    
+    for (let i = 0; i < newData.length; i++) {
+      const otherActivity = newData[i];
+      const otherFromTime = new Date(otherActivity.fromDateTime).getTime();
+      
+      if (currentFromTime < otherFromTime) {
+        insertIndex = i;
+        break;
       }
+      insertIndex = i + 1; // If not found before any activity, insert at the end
     }
     
-    // Calculate the correct fromDateTime based on the last valid row
-    let correctFromDateTime: Date;
+    // Insert the activity at the correct position
+    newData.splice(insertIndex, 0, activityToMove);
     
-    if (lastValidIndex === -1) {
-      // No valid rows found, shouldn't happen but fallback to first row's end time
-      correctFromDateTime = new Date(data[0].toDateTime);
-    } else {
-      correctFromDateTime = new Date(data[lastValidIndex].toDateTime);
+    // Now adjust the fromDateTime to follow the sequential timing rule
+    let adjustedActivity = { ...activityToMove };
+    
+    if (insertIndex > 0) {
+      // If not the first position, set fromDateTime to match previous activity's toDateTime
+      const previousActivity = newData[insertIndex - 1];
+      const previousToTime = new Date(previousActivity.toDateTime);
+      
+      // Always update fromDateTime to maintain sequential timing (no tolerance check)
+      adjustedActivity.fromDateTime = new Date(previousToTime.getTime());
+      adjustedActivity.day = previousToTime.toISOString();
+      
+      // Calculate the original duration in milliseconds
+      const originalFromTime = new Date(activityToMove.fromDateTime);
+      const originalToTime = new Date(activityToMove.toDateTime);
+      const originalDurationMs = originalToTime.getTime() - originalFromTime.getTime();
+      
+      // Update toDateTime to maintain the original duration
+      adjustedActivity.toDateTime = new Date(previousToTime.getTime() + originalDurationMs);
+      
+      // Ensure toDateTime is not before fromDateTime
+      if (adjustedActivity.toDateTime.getTime() < adjustedActivity.fromDateTime.getTime()) {
+        adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
+        console.log(`Adjusted toDateTime to match fromDateTime to prevent negative duration`);
+      }
+      
+      console.log(`Adjusted fromDateTime to ${previousToTime.toISOString()} to maintain sequential timing`);
     }
     
-    // Preserve the original duration of the current activity
-    const originalDuration = new Date(currentActivity.toDateTime).getTime() - new Date(currentActivity.fromDateTime).getTime();
-    const correctToDateTime = new Date(correctFromDateTime.getTime() + originalDuration);
+    // Update the activity in the array
+    newData[insertIndex] = adjustedActivity;
     
-    const adjustedActivity: PortActivity = {
-      ...currentActivity,
-      fromDateTime: correctFromDateTime,
-      toDateTime: correctToDateTime,
-      day: correctFromDateTime.toISOString(),
-    };
+    // Optimistically update the cache with the reordered and adjusted data
+    queryClient.setQueryData<PortActivity[]>(
+      qk.portActivity.list(layTimeId),
+      newData
+    );
     
-    adjustPortActivityMutation.mutate({
-      layTimeId,
-      activityIndex: index,
-      adjustedActivity,
-    });
+    console.log(`Moved activity from index ${index} to position ${insertIndex} and adjusted timing`);
+    
+    setAdjustDialogOpen(false);
+    setActivityToAdjust(null);
+  };
+
+  const cancelAdjust = () => {
+    setAdjustDialogOpen(false);
+    setActivityToAdjust(null);
   };
 
   const handleDeleteEvent = (index: number) => {
-    if (!layTimeId) return;
+    if (!layTimeId || !data) return;
+    
+    const activity = data[index];
+    setActivityToDelete({ index, activity });
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (!layTimeId || !activityToDelete) return;
     
     deletePortActivityMutation.mutate({
       layTimeId,
-      activityId: index.toString(),
+      activityId: activityToDelete.index.toString(),
     });
+    
+    setDeleteDialogOpen(false);
+    setActivityToDelete(null);
+  };
+
+  const cancelDelete = () => {
+    setDeleteDialogOpen(false);
+    setActivityToDelete(null);
   };
 
   const handleCloneEvent = (index: number) => {
@@ -227,7 +288,8 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     }
 
     const duration = faker.number.int({ min: 1, max: 24 }); // duration in hours
-    const toDateTime = new Date(nextFromDateTime.getTime() + duration * 60 * 60 * 1000);
+    // Set toDateTime to be exactly the same as fromDateTime initially
+    const toDateTime = new Date(nextFromDateTime.getTime());
 
     const newActivity: PortActivity = {
       day: nextFromDateTime.toISOString(),
@@ -266,27 +328,91 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   const isEmpty = !data || data.length === 0;
 
   return (
-    <div className="flex flex-col gap-2 bg-white p-4 rounded-lg shadow">
+    <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
       <div className="flex items-center justify-between">
-        <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2">
+        <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2 text-gray-900 dark:text-gray-100">
           Port Activity
         </h1>
-        <button
+        <Button
           onClick={() => handleAddEvent(data || [])}
           disabled={addPortActivityMutation.isPending}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {addPortActivityMutation.isPending ? 'Adding...' : 'Add Event'}
-        </button>
+        </Button>
       </div>
       <DataTable data={data} columns={getColumns(handleDeleteEvent, handleCloneEvent, handleUpdatePercentage, handleUpdateDateTime, handleUpdateActivityType, handleAdjustActivity, validationViolations)} validationViolations={validationViolations} />
       {isEmpty && (
-        <div className="text-center text-gray-500 py-8">
+        <div className="text-center text-gray-500 dark:text-gray-400 py-8">
           <div className="mb-2">📋</div>
           <div className="text-lg font-medium mb-1">No port activities found</div>
           <div className="text-sm">Click "Add Event" to create your first port activity</div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Activity</DialogTitle>
+            <DialogDescription>
+              {activityToDelete && (
+                <>
+                  Are you sure you want to delete this <strong>{activityToDelete.activity.activityType}</strong> activity 
+                  from <strong>{new Date(activityToDelete.activity.fromDateTime).toLocaleDateString()}</strong>?
+                  <br /><br />
+                  This action cannot be undone.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={cancelDelete}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Adjust Confirmation Dialog */}
+      <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adjust Activity Timing</DialogTitle>
+            <DialogDescription>
+              {activityToAdjust && (
+                <>
+                  This will automatically adjust the timing of the <strong>{activityToAdjust.activity.activityType}</strong> activity 
+                  from <strong>{new Date(activityToAdjust.activity.fromDateTime).toLocaleDateString()}</strong> to fix the sequential timing violation.
+                  <br /><br />
+                  The activity may be moved to a different position and its start time may be updated to maintain proper sequence.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={cancelAdjust}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmAdjust}
+            >
+              Adjust
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -327,7 +453,7 @@ const getColumns = (
         <select
           value={activityType}
           onChange={(e) => onUpdateActivityType(rowIndex, e.target.value)}
-          className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="Loading">Loading</option>
           <option value="Unloading">Unloading</option>
@@ -342,7 +468,7 @@ const getColumns = (
     },
   }),
   columnHelper.accessor("fromDateTime", {
-    header: "From",
+    header: "From Date and Time",
     cell: (info) => {
       const dateValue = info.getValue();
       const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
@@ -361,21 +487,24 @@ const getColumns = (
     },
   }),
   columnHelper.accessor("toDateTime", {
-    header: "To",
+    header: "To Date and Time",
     cell: (info) => {
       const dateValue = info.getValue();
       const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
-      const rowIndex = info.row.index;
 
       if (isNaN(date.getTime())) {
         return <span>Invalid Date</span>;
       }
 
       return (
-        <DateTimePicker
-          value={date}
-          onChange={(newDate) => onUpdateDateTime(rowIndex, 'toDateTime', newDate)}
-        />
+        <div className="text-sm text-gray-700 dark:text-gray-300">
+          <div className="font-medium">
+            {date.toLocaleDateString()}
+          </div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            {date.toLocaleTimeString()}
+          </div>
+        </div>
       );
     },
   }),
@@ -426,7 +555,7 @@ const getColumns = (
       
       return (
         <div className="flex items-center gap-2">
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
             <div
               className="bg-green-500 h-2 rounded-full"
               style={{ width: `${Math.min(percentage, 100)}%` }}
@@ -435,7 +564,7 @@ const getColumns = (
           <select
             value={percentage}
             onChange={(e) => onUpdatePercentage(rowIndex, parseInt(e.target.value))}
-            className="text-sm font-medium border rounded px-1 py-0.5 bg-white min-w-[60px]"
+            className="text-sm font-medium border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 min-w-[60px]"
           >
             <option value={0}>0%</option>
             <option value={50}>50%</option>
@@ -450,7 +579,7 @@ const getColumns = (
     cell: (info) => {
       const remarks = info.getValue();
       return remarks ? (
-        <span className="text-gray-700">{remarks}</span>
+        <span className="text-gray-700 dark:text-gray-300">{remarks}</span>
       ) : (
         <span className="text-gray-400 italic">No remarks</span>
       );
@@ -506,32 +635,35 @@ const getColumns = (
       const hasViolation = validationViolations.includes(rowIndex);
       
       return (
-        <div className="flex gap-1 flex-wrap">
-          {hasViolation && rowIndex > 0 && (
-            <button
+                <div className="flex gap-1 flex-wrap">
+          {hasViolation && (
+            <Button
               onClick={() => onAdjust(rowIndex)}
-              className="px-2 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 disabled:opacity-50"
+              size="sm"
+              variant="ghost"
               title="Adjust timing to fix sequence violation"
             >
-              Adjust
-            </button>
+              <MdAutoFixHigh className="h-4 w-4" />
+            </Button>
           )}
           {rowIndex > 0 && (
-            <button
+            <Button
               onClick={() => onClone(rowIndex)}
-              className="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50"
+              size="sm"
+              variant="ghost"
               title="Clone activity"
             >
-              Clone
-            </button>
+              <MdContentCopy className="h-4 w-4" />
+            </Button>
           )}
-          <button
+          <Button
             onClick={() => onDelete(rowIndex)}
-            className="px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 disabled:opacity-50"
+            size="sm"
+            variant="ghost"
             title="Delete activity"
           >
-            Delete
-          </button>
+            <MdDelete className="h-4 w-4" />
+          </Button>
         </div>
       );
     },

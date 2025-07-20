@@ -12,7 +12,7 @@ export const handlers = [
   }),
   http.get("/v1/api/port-activity/:layTimeId", ({ params }) => {
     const layTimeId = params.layTimeId as string;
-    return HttpResponse.json(makePortActivityData(5, layTimeId));
+    return HttpResponse.json(makePortActivityData(layTimeId));
   }),
   http.post("/v1/api/port-activity/:layTimeId", async ({ request, params }) => {
     const newActivity = await request.json() as PortActivity;

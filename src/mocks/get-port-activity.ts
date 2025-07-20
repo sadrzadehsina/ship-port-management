@@ -42,20 +42,34 @@ const newPortActivity = (fromDateTime: Date, layTimeId: string, index: number): 
   };
 };
 
-export function makeData(length: number, layTimeId: string = 'default'): PortActivity[] {
+export function makeData(layTimeId: string = 'default'): PortActivity[] {
   // Set initial seed based on layTimeId for the starting date
   const baseSeed = hashCode(layTimeId);
   faker.seed(baseSeed);
   
+  // Generate a random length for this specific layTimeId (between 2 and 10 activities)
+  const length = faker.number.int({ min: 2, max: 10 });
+  
   const activities: PortActivity[] = [];
-  let currentDateTime = faker.date.recent(); // Start with a seeded recent date
+  let currentDateTime = new Date(); // Start with the current moment
   
   for (let i = 0; i < length; i++) {
-    const activity = newPortActivity(currentDateTime, layTimeId, i);
-    activities.push(activity);
-    
-    // Next activity starts where this one ends (sequential behavior)
-    currentDateTime = activity.toDateTime;
+    if (i === 0) {
+      // For the first event, both fromDateTime and toDateTime are the same (current moment)
+      const activity = newPortActivity(currentDateTime, layTimeId, i);
+      activity.toDateTime = currentDateTime; // Set toDateTime to the same as fromDateTime
+      activity.duration = 0; // Duration is 0 for the first event
+      activities.push(activity);
+      
+      // Next activity starts where this one ends (which is the same time for the first event)
+      currentDateTime = activity.toDateTime;
+    } else {
+      const activity = newPortActivity(currentDateTime, layTimeId, i);
+      activities.push(activity);
+      
+      // Next activity starts where this one ends (sequential behavior)
+      currentDateTime = activity.toDateTime;
+    }
   }
   
   return activities;

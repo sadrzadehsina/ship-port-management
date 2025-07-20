@@ -15,16 +15,16 @@ export function LayTimes({ onRowSelect, selectedRowId }: LayTimesProps) {
   const { data, isLoading, error } = useAllLayTimes();
 
   if (isLoading) {
-    return <div>Loading...</div>;
+    return <div className="text-gray-900 dark:text-gray-100">Loading...</div>;
   }
 
   if (error) {
-    return <div>Error loading lay times</div>;
+    return <div className="text-red-600 dark:text-red-400">Error loading lay times</div>;
   }
 
   return (
-    <div className="flex flex-col gap-2 bg-white p-4 rounded-lg shadow">
-      <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2">
+    <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
+      <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2 text-gray-900 dark:text-gray-100">
         Lay Times
       </h1>
       <DataTable
@@ -116,7 +116,7 @@ const columns = [
       return (
         <div className="flex flex-col">
           <span className="font-medium">{date.toLocaleDateString()}</span>
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
             {date.toLocaleTimeString()}
           </span>
         </div>
@@ -138,7 +138,7 @@ const columns = [
       return (
         <div className="flex flex-col">
           <span className="font-medium">{date.toLocaleDateString()}</span>
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
             {date.toLocaleTimeString()}
           </span>
         </div>
