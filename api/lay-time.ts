@@ -1,5 +1,4 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { faker } from '@faker-js/faker';
 
 // Copy of LayTime type (simplified for API use)
 type LayTime = {
@@ -21,38 +20,49 @@ type LayTime = {
   laycanTo: Date;
 };
 
-// Exact copy from get-lay-times.ts
-const newLayTime = (): LayTime => {
+// Simple mock data without faker
+const newLayTime = (index: number): LayTime => {
+  const now = new Date();
+  const futureDate = new Date(now.getTime() + (index + 1) * 24 * 60 * 60 * 1000);
+  
   return {
-    id: faker.string.uuid(),
-    portName: faker.location.country(),
-    cargo: faker.lorem.word(),
-    f: faker.lorem.word(),
-    blCode: faker.lorem.word(),
-    quantity: faker.number.int(100).toFixed(3),
-    ldRate: faker.number.float({ min: 0, max: 100 }).toFixed(2),
-    term: faker.lorem.word(),
-    demRate: faker.number.float({ min: 0, max: 100 }).toFixed(3),
-    desRate: faker.number.float({ min: 0, max: 100 }).toFixed(3),
-    allowed: faker.number.int(10),
-    used: faker.lorem.word(),
-    deduction: faker.lorem.word(),
-    balance: faker.lorem.word(),
-    laycanFrom: faker.date.past(),
-    laycanTo: faker.date.future(),
+    id: `lay-time-${index + 1}`,
+    portName: `Port ${index + 1}`,
+    cargo: `Cargo ${index + 1}`,
+    f: `F${index + 1}`,
+    blCode: `BL${String(index + 1).padStart(3, '0')}`,
+    quantity: `${(index + 1) * 1000}.000`,
+    ldRate: `${(index + 1) * 10}.50`,
+    term: `Term ${index + 1}`,
+    demRate: `${(index + 1) * 5}.000`,
+    desRate: `${(index + 1) * 3}.000`,
+    allowed: (index + 1) * 2,
+    used: `Used ${index + 1}`,
+    deduction: `Deduction ${index + 1}`,
+    balance: `Balance ${index + 1}`,
+    laycanFrom: now,
+    laycanTo: futureDate,
   };
 };
 
-// Exact copy from get-lay-times.ts
+// Simple data generation without faker
 function makeData(length: number): LayTime[] {
-  return Array.from({ length }, () => newLayTime());
+  return Array.from({ length }, (_, index) => newLayTime(index));
 }
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'GET') {
-    const data = makeData(3);
-    res.status(200).json(data);
-  } else {
-    res.status(405).json({ message: 'Method not allowed' });
+  try {
+    if (req.method === 'GET') {
+      const data = makeData(3);
+      res.status(200).json(data);
+    } else {
+      res.status(405).json({ message: 'Method not allowed' });
+    }
+  } catch (error) {
+    console.error('API Error in lay-time:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 }
