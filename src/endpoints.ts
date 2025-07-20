@@ -1,10 +1,13 @@
 // Use different endpoints for development vs production
 const getEndpoint = (path: string) => {
-  if (process.env.NODE_ENV === 'development') {
-    // In development, MSW intercepts these paths
+  const isGitHubPages = typeof window !== 'undefined' && window.location.hostname.includes("github.io");
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  if (isDevelopment || isGitHubPages) {
+    // In development or GitHub Pages, MSW intercepts these paths
     return `/v1/api${path}`;
   } else {
-    // In production, use Vercel API routes
+    // In production (Vercel), use Vercel API routes
     return `/api${path}`;
   }
 };
