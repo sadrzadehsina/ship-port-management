@@ -132,8 +132,6 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     const currentActivity = data[index];
     const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
     
-    const violations = validateSequentialTiming(data);
-    
     const newData = [...data];
     
     const [activityToMove] = newData.splice(index, 1);
@@ -183,40 +181,22 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     
     newData[insertIndex] = adjustedActivity;
     
-    for (let i = 0; i < newData.length - 1; i++) {
-      const currentRow = newData[i];
-      const nextRow = newData[i + 1];
-      
-      if (i === insertIndex) {
-        continue;
-      }
-      
-      let originalIndex = i;
-      if (index < insertIndex) {
-        if (i >= index) {
-          originalIndex = i + 1;
-        }
-      } else if (index > insertIndex) {
-        if (i > insertIndex) {
-          originalIndex = i - 1;
-        }
-      }
-      
-      const currentHasViolation = violations.includes(originalIndex);
-      
-      if (!currentHasViolation && nextRow) {
-        const nextRowFromTime = new Date(nextRow.fromDateTime);
-        currentRow.toDateTime = new Date(nextRowFromTime.getTime());
-      }
-    }
-    
-    if (insertIndex > 0) {
-      const previousActivity = newData[insertIndex - 1];
-      const previousHasViolation = violations.includes(insertIndex - 1);
-      
-      if (!previousHasViolation) {
+    if (index !== insertIndex) {
+      if (insertIndex > 0) {
+        const previousActivity = newData[insertIndex - 1];
         const movedActivityFromTime = adjustedActivity.fromDateTime;
         previousActivity.toDateTime = new Date(movedActivityFromTime.getTime());
+      }
+      
+      if (index > 0 && index < data.length) {
+        const activityAfterOriginalPosition = newData[index];
+        if (activityAfterOriginalPosition && index > 0) {
+          const activityBeforeOriginalPosition = newData[index - 1];
+          if (activityBeforeOriginalPosition) {
+            const nextActivityFromTime = new Date(activityAfterOriginalPosition.fromDateTime);
+            activityBeforeOriginalPosition.toDateTime = new Date(nextActivityFromTime.getTime());
+          }
+        }
       }
     }
     
