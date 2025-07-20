@@ -64,12 +64,12 @@ export function DateTimePicker({ value, onChange, onCancel }: DateTimePickerProp
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
         <button
-          className="text-left hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded text-sm"
+          className="text-left hover:bg-accent hover:text-accent-foreground px-1 py-0.5 rounded text-sm transition-colors"
           title="Click to edit date/time"
         >
           <div className="flex flex-col">
-            <span className="font-medium">{dateStr}</span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="font-medium text-foreground">{dateStr}</span>
+            <span className="text-sm text-muted-foreground">
               {timeStr}
             </span>
           </div>
@@ -98,16 +98,16 @@ export function DateTimePicker({ value, onChange, onCancel }: DateTimePickerProp
                   max="23"
                   value={timeValue.hours}
                   onChange={(e) => handleTimeChange('hours', e.target.value)}
-                  className="w-12 px-2 py-1 text-center border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-12 px-2 py-1 text-center border border-input rounded text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
-                <span className="text-sm">:</span>
+                <span className="text-sm text-foreground">:</span>
                 <input
                   type="number"
                   min="0"
                   max="59"
                   value={timeValue.minutes}
                   onChange={(e) => handleTimeChange('minutes', e.target.value)}
-                  className="w-12 px-2 py-1 text-center border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-12 px-2 py-1 text-center border border-input rounded text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
             </div>

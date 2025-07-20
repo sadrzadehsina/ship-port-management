@@ -119,20 +119,10 @@
   }
   body {
     @apply bg-background text-foreground;
-    @apply p-4;
     @apply font-bold;
     @apply font-normal;
 
     font-family: "Roboto", sans-serif;
   }
   
-  /* Preserve body padding when dialogs are open */
-  body[data-scroll-locked] {
-    padding: 1rem !important;
-  }
-  
-  /* Alternative: preserve padding on body when any modal/dialog is open */
-  body:has([data-state="open"][role="dialog"]) {
-    padding: 1rem !important;
-  }
 }
