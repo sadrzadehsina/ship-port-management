@@ -2,7 +2,7 @@ import { setupWorker } from 'msw/browser';
 import { handlers } from './handlers';
 
 const getServiceWorkerUrl = () => {
-  if (import.meta.env.PROD && window.location.hostname === 'alibaba.github.io') {
+  if (import.meta.env.PROD && window.location.pathname.startsWith('/ship-port-management/')) {
     return '/ship-port-management/mockServiceWorker.js';
   }
   return '/mockServiceWorker.js';

@@ -5,9 +5,9 @@ import "./global.css";
 import App from "./app";
 
 async function enableMocking() {
-  const { worker } = await import('./mocks/browser');
+  const { startWorker } = await import('./mocks/browser');
   
-  return worker.start();
+  return startWorker();
 }enableMocking().then(() => {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
