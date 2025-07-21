@@ -12,7 +12,7 @@ type DataTableProps<T> = {
   columns: ColumnDef<T, any>[];
   onRowSelect?: (row: T) => void;
   selectedRowId?: string;
-  validationViolations?: number[];
+  validationViolations?: string[];
 };
 
 export function DataTable<T extends Record<string, any>>({ 
@@ -51,7 +51,7 @@ export function DataTable<T extends Record<string, any>>({
           {table.getRowModel().rows.map((row) => {
             const rowData = row.original as any;
             const isSelected = onRowSelect && selectedRowId === rowData?.id;
-            const hasViolation = validationViolations.includes(row.index);
+            const hasViolation = validationViolations.includes(rowData?.id);
             
             return (
               <TableRow 

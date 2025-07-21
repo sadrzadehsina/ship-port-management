@@ -45,6 +45,7 @@ export type LayTime = {
 };
 
 export type PortActivity = {
+  id: string;
   day: string;
   activityType: string;
   fromDateTime: Date;

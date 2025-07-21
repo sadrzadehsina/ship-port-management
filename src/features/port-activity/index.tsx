@@ -1,10 +1,9 @@
 import { createColumnHelper } from "@tanstack/react-table";
-import { useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useCallback, useRef, memo, useEffect } from "react";
 import { MdDelete, MdContentCopy, MdAutoFixHigh } from "react-icons/md";
+import { nanoid } from "nanoid";
 
 import type { PortActivity } from "@/types";
-import * as qk from "@/query-keys";
 
 import { DataTable } from "@/components/data-table";
 import { DateTimePicker } from "@/components/date-time-picker";
@@ -17,19 +16,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useAddPortActivity } from "@/queries/use-add-port-activity";
 import { useAllPortActivities } from "@/queries/use-all-port-activities";
-import { useClonePortActivity } from "@/queries/use-clone-port-activity";
-import { useUpdatePortActivityType } from "@/queries/use-update-port-activity-type";
-import { useUpdatePortActivityDateTime } from "@/queries/use-update-port-activity-datetime";
-import { useUpdatePortActivityPercentage } from "@/queries/use-update-port-activity-percentage";
+import { vi } from "date-fns/locale";
 
 type PortActivityProps = {
   layTimeId?: string;
 };
 
 export function PortActivity({ layTimeId }: PortActivityProps) {
-  const queryClient = useQueryClient();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activityToDelete, setActivityToDelete] = useState<{
     index: number;
@@ -41,71 +35,118 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     activity: PortActivity;
   } | null>(null);
 
-  const { data, isLoading, error } = useAllPortActivities(layTimeId || "");
-  const addPortActivityMutation = useAddPortActivity();
-  const clonePortActivityMutation = useClonePortActivity();
-  const updatePercentageMutation = useUpdatePortActivityPercentage();
-  const updateDateTimeMutation = useUpdatePortActivityDateTime();
-  const updateActivityTypeMutation = useUpdatePortActivityType();
+  // Local state for activities (overrides server data when modified)
+  const [localActivities, setLocalActivities] = useState<
+    PortActivity[] | undefined
+  >(undefined);
+
+  const {
+    data: serverData,
+    isLoading,
+    error,
+  } = useAllPortActivities(layTimeId || "");
+
+  // Use local data if available, otherwise use server data
+  // const data = localActivities ?? serverData;
+
+  // Update local state when server data changes (only if we don't have local modifications)
+  useEffect(() => {
+    if (isLoading && !serverData) return;
+    setLocalActivities(serverData);
+  }, [isLoading]);
 
   // Validation functions - must be defined before handleUpdateDateTime
-  const validateSequentialTiming = useCallback((activities: PortActivity[]) => {
-    const violations: number[] = [];
+  const validateSequentialTiming = (
+    activities: PortActivity[],
+    itemsToValidate: PortActivity[]
+  ) => {
+    const violations: string[] = [];
 
-    // Check for invalid timing within each individual row (fromDateTime > toDateTime)
-    for (let i = 0; i < activities.length; i++) {
-      const activity = activities[i];
-      const fromTime = new Date(activity.fromDateTime).getTime();
-      const toTime = new Date(activity.toDateTime).getTime();
+    if (activities.length === 1) return violations;
 
-      // If fromDateTime is greater than toDateTime, mark as violation
-      if (fromTime > toTime) {
-        violations.push(i);
-      }
-    }
+    itemsToValidate.forEach((itemToValidate) => {
+      const index = activities.findIndex(
+        (activity) => activity.id === itemToValidate.id
+      );
 
-    // Check sequential timing between rows
-    for (let i = 1; i < activities.length; i++) {
-      const currentActivity = activities[i];
-      const previousActivity = activities[i - 1];
+      const isFirstRow = index === 0;
+      const isLastRow = index === activities.length - 1;
 
-      const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
-      const previousToTime = new Date(previousActivity.toDateTime).getTime();
+      if (!isFirstRow && !isLastRow) {
+        const prevActivity = activities[index - 1];
+        const nextActivity = activities[index + 1];
 
-      // Allow for small time differences (1 minute tolerance)
-      const timeDifference = Math.abs(currentFromTime - previousToTime);
+        if (prevActivity.fromDateTime > itemToValidate.fromDateTime) {
+          violations.push(itemToValidate.id);
+        }
 
-      if (timeDifference > 60000) {
-        // More than 1 minute difference
-        // Only add if not already added by individual row validation
-        if (!violations.includes(i)) {
-          violations.push(i);
+        if (nextActivity.fromDateTime < itemToValidate.fromDateTime) {
+          violations.push(itemToValidate.id);
         }
       }
+
+      if (isFirstRow) {
+        if (itemToValidate.fromDateTime > activities[1].fromDateTime) {
+          violations.push(itemToValidate.id);
+        }
+      }
+
+      if (isLastRow) {
+        if (
+          itemToValidate.fromDateTime <
+          activities[activities.length - 2].fromDateTime
+        ) {
+          violations.push(itemToValidate.id);
+        }
+      }
+    });
+
+    return violations;
+  };
+
+  // const validationViolations: number[] = [];
+  const [validationViolations, setValidationViolations] = useState<string[]>(
+    []
+  );
+
+  const updateTimingChain = (data: PortActivity[] | undefined) => {
+    if (!data || data.length === 0) return;
+
+    const newActivities = [...data];
+
+    for (let i = 0; i < newActivities.length; i++) {
+      if (i < newActivities.length - 1) {
+        // If next row exists, update current row's toDateTime with next row's fromDateTime
+        const nextActivity = newActivities[i + 1];
+        newActivities[i] = {
+          ...newActivities[i],
+          toDateTime: new Date(nextActivity.fromDateTime),
+        };
+      } else {
+        // If this is the last row, match toDateTime with current row's fromDateTime
+        newActivities[i] = {
+          ...newActivities[i],
+          toDateTime: new Date(newActivities[i].fromDateTime),
+        };
+      }
     }
 
-    return violations;
-  }, []);
-
-  const validationViolations = useMemo(() => {
-    const violations = data ? validateSequentialTiming(data) : [];
-    console.log("Current validation violations:", violations);
-    console.log("Current data:", data);
-    return violations;
-  }, [data, validateSequentialTiming]);
+    return newActivities;
+  };
 
   // All hooks must be called before any conditional returns
   const handleUpdatePercentage = useCallback(
     (index: number, newPercentage: number) => {
-      if (!layTimeId) return;
+      if (!localActivities) return;
 
-      updatePercentageMutation.mutate({
-        layTimeId,
-        activityIndex: index,
+      const newActivities = [...localActivities];
+      newActivities[index] = {
+        ...newActivities[index],
         percentage: newPercentage,
-      });
+      };
+      setLocalActivities(newActivities);
     },
-    [layTimeId, updatePercentageMutation]
+    [localActivities]
   );
 
   const handleUpdateDateTime = useCallback(
@@ -114,236 +155,371 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       field: "fromDateTime" | "toDateTime",
       newDateTime: Date
     ) => {
-      if (!layTimeId || !data) return;
+      if (!localActivities) return;
 
-      // If changing fromDateTime, maintain chain integrity immediately
-      if (field === "fromDateTime") {
-        console.log(
-          "Updating fromDateTime for index:",
-          index,
-          "to:",
-          newDateTime
-        );
+      const newActivities = [...localActivities];
+      newActivities[index] = {
+        ...newActivities[index],
+        [field]: newDateTime,
+        day:
+          field === "fromDateTime"
+            ? newDateTime.toISOString()
+            : newActivities[index].day,
+      };
 
-        queryClient.setQueryData<PortActivity[]>(
-          qk.portActivity.list(layTimeId),
-          (oldData) => {
-            if (!oldData) return oldData;
-            console.log("Old data:", oldData);
+      const updateActivities = updateTimingChain(newActivities);
 
-            const newData = [...oldData];
+      setLocalActivities(updateActivities);
 
-            // Update current activity's fromDateTime
-            newData[index] = { ...newData[index], fromDateTime: newDateTime };
-            console.log("Updated current row fromDateTime:", newData[index]);
+      // Clear violations for all affected rows
+      const affectedRowIds = [updateActivities![index].id];
 
-            // CHAIN INTEGRITY RULE #1: Update previous row's toDateTime to maintain chain
-            if (index > 0) {
-              console.log(
-                "Updating previous row toDateTime from:",
-                newData[index - 1].toDateTime,
-                "to:",
-                newDateTime
-              );
-              newData[index - 1] = {
-                ...newData[index - 1],
-                toDateTime: newDateTime,
-              };
-              console.log("Updated previous row:", newData[index - 1]);
-            }
-
-            // CHAIN INTEGRITY RULE #2: Update current row's toDateTime
-            if (index < newData.length - 1) {
-              // Not the last row - toDateTime should equal next row's fromDateTime
-              const nextRowFromDateTime = newData[index + 1].fromDateTime;
-              newData[index] = { 
-                ...newData[index], 
-                toDateTime: nextRowFromDateTime 
-              };
-              console.log("Updated current row toDateTime to match next row:", newData[index]);
-            } else {
-              // Last row - toDateTime should equal fromDateTime (zero duration)
-              newData[index] = { 
-                ...newData[index], 
-                toDateTime: newDateTime 
-              };
-              console.log("Updated last row to zero duration:", newData[index]);
-            }
-
-            console.log("New data after chain integrity update:", newData);
-            return newData;
-          }
-        );
-        return; // Skip the normal mutation since we handled it locally
+      // If we updated a row's fromDateTime, the previous row's toDateTime was also updated
+      if (
+        field === "fromDateTime" &&
+        index > 0 &&
+        validationViolations.includes(updateActivities![index - 1]?.id)
+      ) {
+        affectedRowIds.push(updateActivities![index - 1].id);
       }
 
-      // Normal update for toDateTime changes
-      updateDateTimeMutation.mutate({
-        layTimeId,
-        activityIndex: index,
-        field,
-        dateTime: newDateTime,
+      if (
+        field === "fromDateTime" &&
+        // index > 0 &&
+        validationViolations.includes(updateActivities![index + 1]?.id)
+      ) {
+        affectedRowIds.push(updateActivities![index + 1].id);
+      }
+
+      setValidationViolations((prev) =>
+        prev.filter((id) => !affectedRowIds.includes(id))
+      );
+
+      // Validate all affected rows
+      const rowsToValidate = affectedRowIds.map(
+        (id) => updateActivities!.find((activity) => activity.id === id)!
+      );
+
+      setValidationViolations((prev) => {
+        const violations = validateSequentialTiming(
+          updateActivities!,
+          rowsToValidate
+        );
+        return [...prev, ...violations];
       });
     },
-    [layTimeId, data, queryClient, updateDateTimeMutation]
+    [localActivities]
   );
 
   const handleUpdateActivityType = useCallback(
     (index: number, newActivityType: string) => {
-      if (!layTimeId) return;
+      if (!localActivities) return;
 
-      updateActivityTypeMutation.mutate({
-        layTimeId,
-        activityIndex: index,
+      const newActivities = [...localActivities];
+      newActivities[index] = {
+        ...newActivities[index],
         activityType: newActivityType,
-      });
+      };
+      setLocalActivities(newActivities);
     },
-    [layTimeId, updateActivityTypeMutation]
+    [localActivities]
   );
 
   const handleUpdateRemarks = useCallback(
     (index: number, newRemarks: string) => {
-      if (!layTimeId) return;
+      if (!localActivities) return;
 
-      // Update cache directly
-      queryClient.setQueryData<PortActivity[]>(
-        qk.portActivity.list(layTimeId),
-        (oldData) => {
-          if (!oldData) return oldData;
-          const newData = [...oldData];
-          if (newData[index]) {
-            newData[index] = { ...newData[index], remarks: newRemarks };
-          }
-          return newData;
-        }
-      );
+      const newActivities = [...localActivities];
+      newActivities[index] = { ...newActivities[index], remarks: newRemarks };
+      setLocalActivities(newActivities);
     },
-    [layTimeId, queryClient]
+    [localActivities]
   );
 
   const handleAdjustActivity = useCallback(
     (index: number) => {
-      if (!layTimeId || !data) return;
+      if (!layTimeId || !localActivities) return;
 
-      const activity = data[index];
+      const activity = localActivities[index];
       setActivityToAdjust({ index, activity });
       setAdjustDialogOpen(true);
     },
-    [layTimeId, data]
+    [layTimeId, localActivities]
   );
 
   const handleDeleteEvent = useCallback(
     (index: number) => {
-      if (!layTimeId || !data) return;
+      if (!layTimeId || !localActivities) return;
 
-      const activity = data[index];
+      const activity = localActivities[index];
       setActivityToDelete({ index, activity });
       setDeleteDialogOpen(true);
     },
-    [layTimeId, data]
+    [layTimeId, localActivities]
   );
 
   const confirmDelete = useCallback(() => {
-    if (!layTimeId || !activityToDelete || !data) return;
+    if (!localActivities || !activityToDelete) return;
 
-    const deleteIndex = activityToDelete.index;
-    const newData = [...data];
+    const newActivities = [...localActivities];
+    const deletedIndex = activityToDelete.index;
+    newActivities.splice(deletedIndex, 1);
 
-    // Store references before deletion
-    const previousActivity = deleteIndex > 0 ? newData[deleteIndex - 1] : null;
-    const nextActivity =
-      deleteIndex < newData.length - 1 ? newData[deleteIndex + 1] : null;
+    const updateActivities = updateTimingChain(newActivities);
 
-    // Check for violations BEFORE deletion to see if activities were already problematic
-    const originalViolations = validateSequentialTiming(data);
-    const previousHadViolation = previousActivity
-      ? originalViolations.includes(deleteIndex - 1)
-      : false;
-    const nextHadViolation = nextActivity
-      ? originalViolations.includes(deleteIndex + 1)
-      : false;
+    // After deletion, we need to validate neighbors of where the deleted item was
+    const affectedRowIds: string[] = [];
+    const itemsToValidate: PortActivity[] = [];
 
-    // Remove the activity
-    newData.splice(deleteIndex, 1);
+    // If there are still activities after deletion
+    if (updateActivities && updateActivities.length > 0) {
+      // Add the item that is now at the deleted position (if exists)
+      if (deletedIndex < updateActivities.length) {
+        const itemAtDeletedPosition = updateActivities[deletedIndex];
+        affectedRowIds.push(itemAtDeletedPosition.id);
+        itemsToValidate.push(itemAtDeletedPosition);
+      }
 
-    // Auto-adjust timing chain - connect previous and next activities
-    if (previousActivity && nextActivity) {
-      // Find the new indices of the previous and next activities after deletion
-      const previousActivityNewIndex = deleteIndex - 1; // Previous activity index stays the same
-      const nextActivityNewIndex = deleteIndex; // Next activity moves to deleted activity's position
-
-      // Get the actual activities from the newData array
-      const updatedPreviousActivity = newData[previousActivityNewIndex];
-      const updatedNextActivity = newData[nextActivityNewIndex];
-
-      if (updatedPreviousActivity && updatedNextActivity) {
-        // Only auto-adjust if neither activity had violations BEFORE deletion
-        // This way we don't auto-adjust activities that the user has already flagged as needing attention
-        if (!previousHadViolation && !nextHadViolation) {
-          // Connect previous activity's toDateTime to next activity's fromDateTime
-          updatedPreviousActivity.toDateTime = new Date(
-            updatedNextActivity.fromDateTime
-          );
-        }
+      // Add the item before the deleted position (if exists)
+      if (deletedIndex > 0) {
+        const itemBeforeDeleted = updateActivities[deletedIndex - 1];
+        affectedRowIds.push(itemBeforeDeleted.id);
+        itemsToValidate.push(itemBeforeDeleted);
       }
     }
 
-    // Update the cache with the adjusted data
-    queryClient.setQueryData<PortActivity[]>(
-      qk.portActivity.list(layTimeId),
-      newData
+    // Clear violations for all affected rows
+    setValidationViolations((prev) =>
+      prev.filter((id) => !affectedRowIds.includes(id))
     );
+
+    // Validate all affected rows
+    if (updateActivities && itemsToValidate.length > 0) {
+      setValidationViolations((prev) => {
+        const violations = validateSequentialTiming(
+          updateActivities,
+          itemsToValidate
+        );
+        return [...prev, ...violations];
+      });
+    }
+
+    setLocalActivities(updateActivities);
 
     setDeleteDialogOpen(false);
     setActivityToDelete(null);
-  }, [
-    layTimeId,
-    activityToDelete,
-    data,
-    queryClient,
-    validateSequentialTiming,
-  ]);
+  }, [localActivities, activityToDelete]);
 
   const handleCloneEvent = useCallback(
     (index: number) => {
-      if (!layTimeId || !data) return;
+      if (!localActivities) return;
 
-      const activityToClone = data[index];
-      const insertIndex = index;
-
-      let newFromDateTime: Date;
-
-      if (index === 0) {
-        const originalFromTime = new Date(activityToClone.fromDateTime);
-        newFromDateTime = new Date(
-          originalFromTime.getTime() - activityToClone.duration * 60 * 60 * 1000
-        );
-      } else {
-        const previousActivity = data[index - 1];
-        newFromDateTime = new Date(previousActivity.toDateTime);
-      }
-
-      const duration = activityToClone.duration;
-      const newToDateTime = new Date(
-        newFromDateTime.getTime() + duration * 60 * 60 * 1000
-      );
-
+      const activityToClone = localActivities[index];
       const clonedActivity: PortActivity = {
         ...activityToClone,
-        day: newFromDateTime.toISOString(),
-        fromDateTime: newFromDateTime,
-        toDateTime: newToDateTime,
+        id: nanoid(),
         remarks: `${activityToClone.remarks || ""} (Copy)`,
       };
 
-      clonePortActivityMutation.mutate({
-        layTimeId,
-        activity: clonedActivity,
-        insertIndex,
+      const newActivities = [...localActivities];
+      newActivities.splice(index, 0, clonedActivity);
+
+      const updateActivities = updateTimingChain(newActivities);
+      
+      // Find the cloned activity's position and collect all affected items
+      const clonedIndex = updateActivities!.findIndex(activity => activity.id === clonedActivity.id);
+      const affectedRowIds: string[] = [clonedActivity.id];
+      const itemsToValidate: PortActivity[] = [clonedActivity];
+
+
+      // Add previous row if it exists
+      if (clonedIndex > 0) {
+        const prevActivity = updateActivities![clonedIndex];
+        affectedRowIds.push(prevActivity.id);
+        itemsToValidate.push(prevActivity);
+      }
+
+      // Add next row if it exists
+      if (clonedIndex < updateActivities!.length - 1) {
+        const nextActivity = updateActivities![clonedIndex + 1];
+        affectedRowIds.push(nextActivity.id);
+        itemsToValidate.push(nextActivity);
+      }
+
+      // Clear violations for all affected rows
+      setValidationViolations((prev) =>
+        prev.filter((id) => !affectedRowIds.includes(id))
+      );
+
+      // Validate all affected rows
+      setValidationViolations((prev) => {
+        const violations = validateSequentialTiming(
+          updateActivities!,
+          itemsToValidate
+        );
+        return [...prev, ...violations];
       });
+
+      setLocalActivities(updateActivities);
     },
-    [layTimeId, data, clonePortActivityMutation]
+    [localActivities]
   );
+
+  const confirmAdjust = () => {
+    if (!localActivities || !activityToAdjust) return;
+
+    const currentItem = localActivities.find(
+      (activity) => activity.id === activityToAdjust.activity.id
+    );
+
+    // Find the current index of the activity to adjust
+    const currentIndex = localActivities.findIndex(
+      (activity) => activity.id === activityToAdjust.activity.id
+    );
+
+    if (currentIndex === -1) {
+      setAdjustDialogOpen(false);
+      setActivityToAdjust(null);
+      return;
+    }
+
+    const newActivities = [...localActivities];
+
+    // Remove the activity to adjust
+    newActivities.splice(currentIndex, 1);
+
+    // Find the correct position to insert the activity based on its fromDateTime
+    const activityFromTime = new Date(currentItem!.fromDateTime).getTime();
+    let insertIndex = 0;
+
+    for (let i = 0; i < newActivities.length; i++) {
+      const otherActivity = newActivities[i];
+      const otherFromTime = new Date(otherActivity.fromDateTime).getTime();
+
+      if (activityFromTime < otherFromTime) {
+        insertIndex = i;
+        break;
+      }
+      insertIndex = i + 1;
+    }
+
+    // Insert the activity at the correct position
+    newActivities.splice(insertIndex, 0, currentItem!);
+
+    // Sort rows that are not in validation violations
+    const validRows: PortActivity[] = [];
+    const violatedRows: { activity: PortActivity; originalIndex: number }[] = [];
+    
+    newActivities.forEach((activity, index) => {
+      if (validationViolations.includes(activity.id)) {
+        violatedRows.push({ activity, originalIndex: index });
+      } else {
+        validRows.push(activity);
+      }
+    });
+
+    // Sort valid rows by fromDateTime
+    validRows.sort((a, b) => {
+      const timeA = new Date(a.fromDateTime).getTime();
+      const timeB = new Date(b.fromDateTime).getTime();
+      return timeA - timeB;
+    });
+
+    // Rebuild the array: place valid rows in sorted order, keep violated rows in their positions
+    const sortedActivities: PortActivity[] = [];
+    let validRowIndex = 0;
+    
+    for (let i = 0; i < newActivities.length; i++) {
+      const violatedRow = violatedRows.find(vr => vr.originalIndex === i);
+      if (violatedRow) {
+        sortedActivities.push(violatedRow.activity);
+      } else {
+        sortedActivities.push(validRows[validRowIndex]);
+        validRowIndex++;
+      }
+    }
+
+    const updateActivities = updateTimingChain(sortedActivities);
+
+    // Find the new position of the adjusted item and collect all affected items
+    const newIndex = updateActivities!.findIndex(activity => activity.id === currentItem!.id);
+    const affectedRowIds: string[] = [currentItem!.id];
+    const itemsToValidate: PortActivity[] = [currentItem!];
+
+    // Add previous row if it exists
+    if (newIndex > 0) {
+      const prevActivity = updateActivities![newIndex - 1];
+      affectedRowIds.push(prevActivity.id);
+      itemsToValidate.push(prevActivity);
+    }
+
+    // Add next row if it exists
+    if (newIndex < updateActivities!.length - 1) {
+      const nextActivity = updateActivities![newIndex + 1];
+      affectedRowIds.push(nextActivity.id);
+      itemsToValidate.push(nextActivity);
+    }
+
+    // Clear violations for all affected rows
+    setValidationViolations((prev) =>
+      prev.filter((id) => !affectedRowIds.includes(id))
+    );
+
+    // Validate all affected rows
+    setValidationViolations((prev) => {
+      const violations = validateSequentialTiming(
+        updateActivities!,
+        itemsToValidate
+      );
+      return [...prev, ...violations];
+    });
+
+    setLocalActivities(updateActivities);
+    setAdjustDialogOpen(false);
+    setActivityToAdjust(null);
+  };
+
+  const cancelAdjust = () => {
+    setAdjustDialogOpen(false);
+    setActivityToAdjust(null);
+  };
+
+  const cancelDelete = () => {
+    setDeleteDialogOpen(false);
+    setActivityToDelete(null);
+  };
+
+  const handleAddEvent = (existingData: PortActivity[]) => {
+    if (!layTimeId) return;
+
+    let fromDateTime: Date;
+
+    if (existingData.length === 0) {
+      // Start with current time for the first activity
+      fromDateTime = new Date();
+    } else {
+      const lastActivity = existingData[existingData.length - 1];
+      fromDateTime = new Date(lastActivity.toDateTime);
+    }
+
+    // toDateTime should match fromDateTime (zero duration initially)
+    const toDateTime = new Date(fromDateTime.getTime());
+
+    const newActivity: PortActivity = {
+      id: nanoid(),
+      day: fromDateTime.toISOString(),
+      activityType: "Unknown",
+      fromDateTime,
+      duration: 0,
+      percentage: 0,
+      toDateTime,
+      remarks: "",
+      deductions: "",
+    };
+
+    const newActivities = [...existingData, newActivity];
+    setLocalActivities(newActivities);
+  };
 
   // Always call useMemo before any conditional returns
   const columns = useMemo(
@@ -370,6 +546,16 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     ]
   );
 
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  if (error) {
+    return <div>Error loading port activities</div>;
+  }
+
+  const isEmpty = !localActivities || localActivities.length === 0;
+
   if (!layTimeId) {
     return (
       <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
@@ -387,254 +573,23 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     );
   }
 
-  const confirmAdjust = () => {
-    if (!layTimeId || !data || !activityToAdjust) return;
-
-    // Find the current index of the activity to adjust (in case indices have changed due to deletions)
-    const currentIndex = data.findIndex(
-      (activity) =>
-        activity.fromDateTime === activityToAdjust.activity.fromDateTime &&
-        activity.activityType === activityToAdjust.activity.activityType &&
-        activity.remarks === activityToAdjust.activity.remarks
-    );
-
-    if (currentIndex === -1) {
-      // Activity not found, might have been deleted
-      setAdjustDialogOpen(false);
-      setActivityToAdjust(null);
-      return;
-    }
-
-    const currentActivity = data[currentIndex];
-    const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
-
-    const newData = [...data];
-
-    // Check for violations BEFORE adjustment to avoid affecting rows that already have issues
-    const originalViolations = validateSequentialTiming(data);
-
-    const [activityToMove] = newData.splice(currentIndex, 1);
-
-    let insertIndex = 0;
-
-    for (let i = 0; i < newData.length; i++) {
-      const otherActivity = newData[i];
-      const otherFromTime = new Date(otherActivity.fromDateTime).getTime();
-
-      if (currentFromTime < otherFromTime) {
-        insertIndex = i;
-        break;
-      }
-      insertIndex = i + 1;
-    }
-
-    newData.splice(insertIndex, 0, activityToMove);
-
-    let adjustedActivity = { ...activityToMove };
-
-    adjustedActivity.fromDateTime = new Date(adjustedActivity.fromDateTime);
-    adjustedActivity.toDateTime = new Date(adjustedActivity.toDateTime);
-
-    // Only adjust the previous activity's toDateTime if it doesn't have a violation
-    if (insertIndex > 0) {
-      const previousActivity = newData[insertIndex - 1];
-      const previousActivityOriginalIndex = insertIndex - 1;
-
-      // Check if the previous activity had a violation in the original data
-      const previousHadViolation = originalViolations.includes(
-        previousActivityOriginalIndex
-      );
-
-      // Only auto-adjust if the previous activity didn't have a violation
-      if (!previousHadViolation) {
-        previousActivity.toDateTime = new Date(adjustedActivity.fromDateTime);
-      }
-    }
-
-    // Adjust the moved activity's toDateTime based on the next activity
-    if (insertIndex < newData.length - 1) {
-      const nextActivity = newData[insertIndex + 1];
-      const nextActivityFromTime = new Date(nextActivity.fromDateTime);
-      const movedActivityFromTime = adjustedActivity.fromDateTime;
-
-      if (nextActivityFromTime.getTime() > movedActivityFromTime.getTime()) {
-        adjustedActivity.toDateTime = new Date(nextActivityFromTime.getTime());
-      } else {
-        const originalDuration =
-          new Date(activityToMove.toDateTime).getTime() -
-          new Date(activityToMove.fromDateTime).getTime();
-        const minDuration = Math.max(originalDuration, 60 * 60 * 1000);
-        adjustedActivity.toDateTime = new Date(
-          adjustedActivity.fromDateTime.getTime() + minDuration
-        );
-      }
-    } else {
-      const originalDuration =
-        new Date(activityToMove.toDateTime).getTime() -
-        new Date(activityToMove.fromDateTime).getTime();
-      adjustedActivity.toDateTime = new Date(
-        adjustedActivity.fromDateTime.getTime() + originalDuration
-      );
-    }
-
-    if (
-      adjustedActivity.toDateTime.getTime() <
-      adjustedActivity.fromDateTime.getTime()
-    ) {
-      adjustedActivity.toDateTime = new Date(
-        adjustedActivity.fromDateTime.getTime()
-      );
-    }
-
-    adjustedActivity.day = adjustedActivity.fromDateTime.toISOString();
-
-    newData[insertIndex] = adjustedActivity;
-
-    // Forward chaining: Update toDateTime of each activity to match the next activity's fromDateTime
-    // This ensures proper timing chain flow after adjustment, but respects violation boundaries
-    for (let i = 0; i < newData.length - 1; i++) {
-      const currentActivity = newData[i];
-      const nextActivity = newData[i + 1];
-
-      if (currentActivity && nextActivity) {
-        // Check if either activity had violations in the original data
-        // We need to map back to original indices to check violations properly
-        const currentHadViolation = originalViolations.some(
-          (violationIndex) => {
-            // Find if this activity existed in the original data and had a violation
-            const originalActivity = data.find(
-              (origActivity) =>
-                origActivity.fromDateTime === currentActivity.fromDateTime &&
-                origActivity.activityType === currentActivity.activityType &&
-                origActivity.remarks === currentActivity.remarks
-            );
-            return (
-              originalActivity &&
-              data.indexOf(originalActivity) === violationIndex
-            );
-          }
-        );
-
-        const nextHadViolation = originalViolations.some((violationIndex) => {
-          const originalActivity = data.find(
-            (origActivity) =>
-              origActivity.fromDateTime === nextActivity.fromDateTime &&
-              origActivity.activityType === nextActivity.activityType &&
-              origActivity.remarks === nextActivity.remarks
-          );
-          return (
-            originalActivity &&
-            data.indexOf(originalActivity) === violationIndex
-          );
-        });
-
-        // Only auto-adjust if neither activity had violations originally
-        if (!currentHadViolation && !nextHadViolation) {
-          // Update current activity's toDateTime to match next activity's fromDateTime
-          currentActivity.toDateTime = new Date(nextActivity.fromDateTime);
-        }
-      }
-    }
-
-    // Handle the last activity - it should have zero duration or maintain its original toDateTime
-    const lastActivity = newData[newData.length - 1];
-    if (lastActivity) {
-      // Keep the last activity's toDateTime as is, or make it zero duration if needed
-      // This preserves the original behavior for the final activity
-    }
-
-    // Check if there are any remaining violations after the adjustment
-    const finalViolations = validateSequentialTiming(newData);
-    console.log("Violations after adjustment:", finalViolations);
-
-    // If no violations remain, sort all rows by fromDateTime for clean chronological order
-    if (finalViolations.length === 0) {
-      console.log("No violations remaining, sorting all rows chronologically");
-      newData.sort((a, b) => {
-        const aTime = new Date(a.fromDateTime).getTime();
-        const bTime = new Date(b.fromDateTime).getTime();
-        return aTime - bTime;
-      });
-      console.log("Sorted data:", newData);
-    }
-
-    queryClient.setQueryData<PortActivity[]>(
-      qk.portActivity.list(layTimeId),
-      newData
-    );
-
-    setAdjustDialogOpen(false);
-    setActivityToAdjust(null);
-  };
-
-  const cancelAdjust = () => {
-    setAdjustDialogOpen(false);
-    setActivityToAdjust(null);
-  };
-
-  const cancelDelete = () => {
-    setDeleteDialogOpen(false);
-    setActivityToDelete(null);
-  };
-
-  const handleAddEvent = (existingData: PortActivity[]) => {
-    if (!layTimeId) return;
-
-    let nextFromDateTime: Date;
-
-    if (existingData.length === 0) {
-      // Start with a recent date for the first activity
-      nextFromDateTime = new Date();
-    } else {
-      const lastActivity = existingData[existingData.length - 1];
-      nextFromDateTime = new Date(lastActivity.toDateTime);
-    }
-
-    // toDateTime should match fromDateTime exactly (no gap)
-    const toDateTime = new Date(nextFromDateTime.getTime());
-
-    const newActivity: PortActivity = {
-      day: nextFromDateTime.toISOString(),
-      activityType: "Unknown", // Default to Unknown
-      fromDateTime: nextFromDateTime,
-      duration: 0, // Duration is 0 since toDateTime equals fromDateTime
-      percentage: 0, // Default to 0%
-      toDateTime,
-      remarks: "", // Empty remarks by default
-      deductions: "", // Empty deductions by default
-    };
-
-    addPortActivityMutation.mutate({
-      layTimeId,
-      activity: newActivity,
-    });
-  };
-
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-
-  if (error) {
-    return <div>Error loading port activities</div>;
-  }
-
-  const isEmpty = !data || data.length === 0;
-
   return (
     <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
       <div className="flex items-center justify-between">
         <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2 text-gray-900 dark:text-gray-100">
           Port Activity
         </h1>
-        <Button
-          onClick={() => handleAddEvent(data || [])}
-          disabled={addPortActivityMutation.isPending}
-        >
-          {addPortActivityMutation.isPending ? "Adding..." : "Add Event"}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => handleAddEvent(localActivities || [])}
+            disabled={false}
+          >
+            Add Event
+          </Button>
+        </div>
       </div>
       <DataTable
-        data={data || []}
+        data={localActivities || []}
         columns={columns}
         validationViolations={validationViolations}
       />
@@ -783,7 +738,7 @@ const createColumns = (
   onUpdateActivityType: (index: number, activityType: string) => void,
   onUpdateRemarks: (index: number, remarks: string) => void,
   onAdjust: (index: number) => void,
-  validationViolations: number[]
+  validationViolations: string[]
 ) => [
   columnHelper.accessor("day", {
     header: "Day",
@@ -1011,14 +966,11 @@ const createColumns = (
   }),
   columnHelper.display({
     id: "actions",
-    header: () => (
-      <div className="text-right">
-        Actions
-      </div>
-    ),
+    header: () => <div className="text-right">Actions</div>,
     cell: (info) => {
       const rowIndex = info.row.index;
-      const hasViolation = validationViolations.includes(rowIndex);
+      const rowId = info.row.original.id;
+      const hasViolation = validationViolations.includes(rowId);
 
       return (
         <div className="flex gap-1 justify-end flex-wrap">
