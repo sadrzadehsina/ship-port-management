@@ -116,7 +116,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     ) => {
       if (!layTimeId || !data) return;
 
-      // If changing fromDateTime, always update previous row's toDateTime to maintain chain
+      // If changing fromDateTime, maintain chain integrity immediately
       if (field === "fromDateTime") {
         console.log(
           "Updating fromDateTime for index:",
@@ -135,9 +135,9 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
 
             // Update current activity's fromDateTime
             newData[index] = { ...newData[index], fromDateTime: newDateTime };
-            console.log("Updated current row:", newData[index]);
+            console.log("Updated current row fromDateTime:", newData[index]);
 
-            // Always update previous activity's toDateTime to maintain chain
+            // CHAIN INTEGRITY RULE #1: Update previous row's toDateTime to maintain chain
             if (index > 0) {
               console.log(
                 "Updating previous row toDateTime from:",
@@ -152,17 +152,25 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
               console.log("Updated previous row:", newData[index - 1]);
             }
 
-            // If this is the last row, also update its toDateTime to match fromDateTime (zero duration)
-            if (index === newData.length - 1) {
-              console.log(
-                "This is the last row, updating toDateTime to match fromDateTime:",
-                newDateTime
-              );
-              newData[index] = { ...newData[index], toDateTime: newDateTime };
+            // CHAIN INTEGRITY RULE #2: Update current row's toDateTime
+            if (index < newData.length - 1) {
+              // Not the last row - toDateTime should equal next row's fromDateTime
+              const nextRowFromDateTime = newData[index + 1].fromDateTime;
+              newData[index] = { 
+                ...newData[index], 
+                toDateTime: nextRowFromDateTime 
+              };
+              console.log("Updated current row toDateTime to match next row:", newData[index]);
+            } else {
+              // Last row - toDateTime should equal fromDateTime (zero duration)
+              newData[index] = { 
+                ...newData[index], 
+                toDateTime: newDateTime 
+              };
               console.log("Updated last row to zero duration:", newData[index]);
             }
 
-            console.log("New data:", newData);
+            console.log("New data after chain integrity update:", newData);
             return newData;
           }
         );
