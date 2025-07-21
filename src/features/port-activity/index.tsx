@@ -510,7 +510,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       activityType: "Unknown",
       fromDateTime,
       duration: 0,
-      percentage: 0,
+      percentage: 100,
       toDateTime,
       remarks: "",
       deductions: "",
@@ -882,7 +882,7 @@ const createColumns = (
             onChange={(e) =>
               onUpdatePercentage(rowIndex, parseInt(e.target.value))
             }
-            className="text-sm font-medium border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 min-w-[60px]"
+            className="text-sm font-medium border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 min-w-[80px]"
           >
             <option value={0}>0%</option>
             <option value={50}>50%</option>
