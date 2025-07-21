@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useAllPortActivities } from "@/queries/use-all-port-activities";
-import { vi } from "date-fns/locale";
 
 type PortActivityProps = {
   layTimeId?: string;
