@@ -1,7 +1,6 @@
-import { faker } from "@faker-js/faker";
 import { createColumnHelper } from "@tanstack/react-table";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo, useCallback, useRef, memo, useEffect } from "react";
 import { MdDelete, MdContentCopy, MdAutoFixHigh } from "react-icons/md";
 
 import type { PortActivity } from "@/types";
@@ -42,29 +41,9 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   const updatePercentageMutation = useUpdatePortActivityPercentage();
   const updateDateTimeMutation = useUpdatePortActivityDateTime();
   const updateActivityTypeMutation = useUpdatePortActivityType();
-  
-  if (!layTimeId) {
-    return (
-      <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
-        <div className="flex items-center justify-between">
-          <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2 text-gray-900 dark:text-gray-100">
-            Port Activity
-          </h1>
-          <Button
-            disabled
-          >
-            Add Event
-          </Button>
-        </div>
-        <DataTable data={[] as PortActivity[]} columns={getColumns(() => {}, () => {}, () => {}, () => {}, () => {}, () => {}, [])} />
-        <div className="text-center text-gray-500 dark:text-gray-400 py-4">
-          Select a lay time row to view port activities
-        </div>
-      </div>
-    );
-  }
 
-  const validateSequentialTiming = (activities: PortActivity[]) => {
+  // Validation functions - must be defined before handleUpdateDateTime
+  const validateSequentialTiming = useCallback((activities: PortActivity[]) => {
     const violations: number[] = [];
     
     for (let i = 1; i < activities.length; i++) {
@@ -79,23 +58,18 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       
       if (timeDifference > 60000) { // More than 1 minute difference
         violations.push(i);
-        console.log(`Timing violation at index ${i}:`, {
-          current: currentActivity,
-          previous: previousActivity,
-          currentFromTime: new Date(currentFromTime),
-          previousToTime: new Date(previousToTime),
-          difference: timeDifference / 1000 / 60 // in minutes
-        });
       }
     }
     
-    console.log('Validation violations:', violations);
     return violations;
-  };
+  }, []);
 
-  const validationViolations = data ? validateSequentialTiming(data) : [];
+  const validationViolations = useMemo(() => {
+    return data ? validateSequentialTiming(data) : [];
+  }, [data, validateSequentialTiming]);
 
-  const handleUpdatePercentage = (index: number, newPercentage: number) => {
+  // All hooks must be called before any conditional returns
+  const handleUpdatePercentage = useCallback((index: number, newPercentage: number) => {
     if (!layTimeId) return;
     
     updatePercentageMutation.mutate({
@@ -103,20 +77,64 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       activityIndex: index,
       percentage: newPercentage,
     });
-  };
+  }, [layTimeId, updatePercentageMutation]);
 
-  const handleUpdateDateTime = (index: number, field: 'fromDateTime' | 'toDateTime', newDateTime: Date) => {
-    if (!layTimeId) return;
+  const handleUpdateDateTime = useCallback((index: number, field: 'fromDateTime' | 'toDateTime', newDateTime: Date) => {
+    if (!layTimeId || !data) return;
     
+    // If changing fromDateTime, check for auto-adjustment logic
+    if (field === 'fromDateTime') {
+      // Check if current row has violations - if so, skip auto-adjustment
+      const hasViolation = validationViolations.includes(index);
+      
+      if (!hasViolation) {
+        const previousActivity = index > 0 ? data[index - 1] : null;
+        const nextActivity = index < data.length - 1 ? data[index + 1] : null;
+        
+        const newFromTime = newDateTime.getTime();
+        const previousFromTime = previousActivity ? new Date(previousActivity.fromDateTime).getTime() : -Infinity;
+        const nextFromTime = nextActivity ? new Date(nextActivity.fromDateTime).getTime() : Infinity;
+        
+        // Check if the new fromDateTime is within valid range
+        if (newFromTime > previousFromTime && newFromTime < nextFromTime) {
+          queryClient.setQueryData<PortActivity[]>(
+            qk.portActivity.list(layTimeId),
+            (oldData) => {
+              if (!oldData) return oldData;
+              const newData = [...oldData];
+              
+              // Update current activity's fromDateTime
+              newData[index] = { ...newData[index], fromDateTime: newDateTime };
+              
+              // Update previous activity's toDateTime to maintain chain
+              if (previousActivity) {
+                newData[index - 1] = { ...newData[index - 1], toDateTime: newDateTime };
+              }
+              
+              // If this is the last row, update its toDateTime to match fromDateTime
+              if (!nextActivity) {
+                newData[index] = { ...newData[index], toDateTime: newDateTime };
+              }
+              
+              return newData;
+            }
+          );
+          return; // Skip the normal mutation since we handled it locally
+        }
+      }
+      // If has violations or not in valid range, let the normal mutation proceed - validation will catch it
+    }
+    
+    // Normal update for toDateTime or invalid fromDateTime changes
     updateDateTimeMutation.mutate({
       layTimeId,
       activityIndex: index,
       field,
       dateTime: newDateTime,
     });
-  };
+  }, [layTimeId, data, queryClient, updateDateTimeMutation, validationViolations]);
 
-  const handleUpdateActivityType = (index: number, newActivityType: string) => {
+  const handleUpdateActivityType = useCallback((index: number, newActivityType: string) => {
     if (!layTimeId) return;
     
     updateActivityTypeMutation.mutate({
@@ -124,165 +142,80 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       activityIndex: index,
       activityType: newActivityType,
     });
-  };
+  }, [layTimeId, updateActivityTypeMutation]);
 
-  const handleAdjustActivity = (index: number) => {
+  const handleUpdateRemarks = useCallback((index: number, newRemarks: string) => {
+    if (!layTimeId) return;
+    
+    // Update cache directly
+    queryClient.setQueryData<PortActivity[]>(
+      qk.portActivity.list(layTimeId),
+      (oldData) => {
+        if (!oldData) return oldData;
+        const newData = [...oldData];
+        if (newData[index]) {
+          newData[index] = { ...newData[index], remarks: newRemarks };
+        }
+        return newData;
+      }
+    );
+  }, [layTimeId, queryClient]);
+
+  const handleAdjustActivity = useCallback((index: number) => {
     if (!layTimeId || !data) return;
     
     const activity = data[index];
     setActivityToAdjust({ index, activity });
     setAdjustDialogOpen(true);
-  };
+  }, [layTimeId, data]);
 
-  const confirmAdjust = () => {
-    if (!layTimeId || !data || !activityToAdjust) return;
-    
-    console.log('confirmAdjust called with:', { layTimeId, data: data.length, activityToAdjust });
-    
-    // Find the current index of the activity to adjust (in case indices have changed due to deletions)
-    const currentIndex = data.findIndex(activity => 
-      activity.fromDateTime === activityToAdjust.activity.fromDateTime &&
-      activity.activityType === activityToAdjust.activity.activityType &&
-      activity.remarks === activityToAdjust.activity.remarks
-    );
-    
-    console.log('Found activity at index:', currentIndex);
-    
-    if (currentIndex === -1) {
-      // Activity not found, might have been deleted
-      console.log('Activity not found, closing dialog');
-      setAdjustDialogOpen(false);
-      setActivityToAdjust(null);
-      return;
-    }
-    
-    const currentActivity = data[currentIndex];
-    const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
-    
-    console.log('Current activity to adjust:', currentActivity);
-    console.log('Current from time:', new Date(currentFromTime));
-    
-    const newData = [...data];
-    
-    const [activityToMove] = newData.splice(currentIndex, 1);
-    
-    let insertIndex = 0;
-    
-    for (let i = 0; i < newData.length; i++) {
-      const otherActivity = newData[i];
-      const otherFromTime = new Date(otherActivity.fromDateTime).getTime();
-      
-      if (currentFromTime < otherFromTime) {
-        insertIndex = i;
-        break;
-      }
-      insertIndex = i + 1;
-    }
-    
-    console.log('Insert index calculated:', insertIndex);
-    console.log('Data length after splice:', newData.length);
-    
-    newData.splice(insertIndex, 0, activityToMove);
-    
-    let adjustedActivity = { ...activityToMove };
-    
-    adjustedActivity.fromDateTime = new Date(adjustedActivity.fromDateTime);
-    adjustedActivity.toDateTime = new Date(adjustedActivity.toDateTime);
-    
-    console.log('Activity before adjustment:', adjustedActivity);
-    
-    // The key fix: adjust the previous activity's toDateTime to connect with this activity's fromDateTime
-    if (insertIndex > 0) {
-      const previousActivity = newData[insertIndex - 1];
-      console.log('Previous activity before adjustment:', previousActivity);
-      previousActivity.toDateTime = new Date(adjustedActivity.fromDateTime);
-      console.log('Adjusted previous activity toDateTime to:', previousActivity.toDateTime);
-    }
-    
-    if (insertIndex < newData.length - 1) {
-      const nextActivity = newData[insertIndex + 1];
-      const nextActivityFromTime = new Date(nextActivity.fromDateTime);
-      const movedActivityFromTime = adjustedActivity.fromDateTime;
-      
-      if (nextActivityFromTime.getTime() > movedActivityFromTime.getTime()) {
-        adjustedActivity.toDateTime = new Date(nextActivityFromTime.getTime());
-      } else {
-        const originalDuration = new Date(activityToMove.toDateTime).getTime() - new Date(activityToMove.fromDateTime).getTime();
-        const minDuration = Math.max(originalDuration, 60 * 60 * 1000);
-        adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + minDuration);
-      }
-    } else {
-      const originalDuration = new Date(activityToMove.toDateTime).getTime() - new Date(activityToMove.fromDateTime).getTime();
-      adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + originalDuration);
-    }
-    
-    console.log('Final adjusted activity:', adjustedActivity);
-    
-    if (adjustedActivity.toDateTime.getTime() < adjustedActivity.fromDateTime.getTime()) {
-      adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
-    }
-    
-    adjustedActivity.day = adjustedActivity.fromDateTime.toISOString();
-    
-    newData[insertIndex] = adjustedActivity;
-    
-    if (currentIndex !== insertIndex) {
-      if (insertIndex > 0) {
-        const previousActivity = newData[insertIndex - 1];
-        const movedActivityFromTime = adjustedActivity.fromDateTime;
-        previousActivity.toDateTime = new Date(movedActivityFromTime.getTime());
-      }
-      
-      if (currentIndex > 0 && currentIndex < data.length) {
-        const activityAfterOriginalPosition = newData[currentIndex];
-        if (activityAfterOriginalPosition && currentIndex > 0) {
-          const activityBeforeOriginalPosition = newData[currentIndex - 1];
-          if (activityBeforeOriginalPosition) {
-            const nextActivityFromTime = new Date(activityAfterOriginalPosition.fromDateTime);
-            activityBeforeOriginalPosition.toDateTime = new Date(nextActivityFromTime.getTime());
-          }
-        }
-      }
-    }
-    
-    if (currentIndex > 0) {
-      const potentialClonedActivity = newData[currentIndex - 1];
-      if (potentialClonedActivity && 
-          potentialClonedActivity.remarks?.includes('(Copy)')) {
-        potentialClonedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
-      }
-    }
-    
-    queryClient.setQueryData<PortActivity[]>(
-      qk.portActivity.list(layTimeId),
-      newData
-    );
-    
-    setAdjustDialogOpen(false);
-    setActivityToAdjust(null);
-  };
-
-  const cancelAdjust = () => {
-    setAdjustDialogOpen(false);
-    setActivityToAdjust(null);
-  };
-
-  const handleDeleteEvent = (index: number) => {
+  const handleDeleteEvent = useCallback((index: number) => {
     if (!layTimeId || !data) return;
     
     const activity = data[index];
     setActivityToDelete({ index, activity });
     setDeleteDialogOpen(true);
-  };
+  }, [layTimeId, data]);
 
-  const confirmDelete = () => {
+  const confirmDelete = useCallback(() => {
     if (!layTimeId || !activityToDelete || !data) return;
     
-    // Simply remove the activity from the data without timing chain updates
+    const deleteIndex = activityToDelete.index;
     const newData = [...data];
-    newData.splice(activityToDelete.index, 1);
     
-    // Update the cache with the new data (with potential timing violations)
+    // Store references before deletion
+    const previousActivity = deleteIndex > 0 ? newData[deleteIndex - 1] : null;
+    const nextActivity = deleteIndex < newData.length - 1 ? newData[deleteIndex + 1] : null;
+    
+    // Check for violations BEFORE deletion to see if activities were already problematic
+    const originalViolations = validateSequentialTiming(data);
+    const previousHadViolation = previousActivity ? originalViolations.includes(deleteIndex - 1) : false;
+    const nextHadViolation = nextActivity ? originalViolations.includes(deleteIndex + 1) : false;
+    
+    // Remove the activity
+    newData.splice(deleteIndex, 1);
+    
+    // Auto-adjust timing chain - connect previous and next activities
+    if (previousActivity && nextActivity) {
+      // Find the new indices of the previous and next activities after deletion
+      const previousActivityNewIndex = deleteIndex - 1; // Previous activity index stays the same
+      const nextActivityNewIndex = deleteIndex; // Next activity moves to deleted activity's position
+      
+      // Get the actual activities from the newData array
+      const updatedPreviousActivity = newData[previousActivityNewIndex];
+      const updatedNextActivity = newData[nextActivityNewIndex];
+      
+      if (updatedPreviousActivity && updatedNextActivity) {
+        // Only auto-adjust if neither activity had violations BEFORE deletion
+        // This way we don't auto-adjust activities that the user has already flagged as needing attention
+        if (!previousHadViolation && !nextHadViolation) {
+          // Connect previous activity's toDateTime to next activity's fromDateTime
+          updatedPreviousActivity.toDateTime = new Date(updatedNextActivity.fromDateTime);
+        }
+      }
+    }
+    
+    // Update the cache with the adjusted data
     queryClient.setQueryData<PortActivity[]>(
       qk.portActivity.list(layTimeId),
       newData
@@ -290,14 +223,9 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     
     setDeleteDialogOpen(false);
     setActivityToDelete(null);
-  };
+  }, [layTimeId, activityToDelete, data, queryClient, validateSequentialTiming]);
 
-  const cancelDelete = () => {
-    setDeleteDialogOpen(false);
-    setActivityToDelete(null);
-  };
-
-  const handleCloneEvent = (index: number) => {
+  const handleCloneEvent = useCallback((index: number) => {
     if (!layTimeId || !data) return;
     
     const activityToClone = data[index];
@@ -321,7 +249,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       day: newFromDateTime.toISOString(),
       fromDateTime: newFromDateTime,
       toDateTime: newToDateTime,
-      remarks: `${activityToClone.remarks} (Copy)`,
+      remarks: `${activityToClone.remarks || ""} (Copy)`,
     };
 
     clonePortActivityMutation.mutate({
@@ -329,6 +257,197 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
       activity: clonedActivity,
       insertIndex,
     });
+  }, [layTimeId, data, clonePortActivityMutation]);
+
+  // Always call useMemo before any conditional returns
+  const columns = useMemo(() => createColumns(
+    handleDeleteEvent, 
+    handleCloneEvent, 
+    handleUpdatePercentage, 
+    handleUpdateDateTime, 
+    handleUpdateActivityType, 
+    handleUpdateRemarks, 
+    handleAdjustActivity, 
+    validationViolations
+  ), [
+    handleDeleteEvent,
+    handleCloneEvent, 
+    handleUpdatePercentage, 
+    handleUpdateDateTime, 
+    handleUpdateActivityType, 
+    handleUpdateRemarks, 
+    handleAdjustActivity, 
+    validationViolations
+  ]);
+  
+  if (!layTimeId) {
+    return (
+      <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 p-4 rounded-lg shadow">
+        <div className="flex items-center justify-between">
+          <h1 className="text-md font-bold border-l-4 border-l-blue-400 pl-2 text-gray-900 dark:text-gray-100">
+            Port Activity
+          </h1>
+          <Button
+            disabled
+          >
+            Add Event
+          </Button>
+        </div>
+        <DataTable data={[] as PortActivity[]} columns={columns} />
+        <div className="text-center text-gray-500 dark:text-gray-400 py-4">
+          Select a lay time row to view port activities
+        </div>
+      </div>
+    );
+  }
+
+  const confirmAdjust = () => {
+    if (!layTimeId || !data || !activityToAdjust) return;
+    
+    // Find the current index of the activity to adjust (in case indices have changed due to deletions)
+    const currentIndex = data.findIndex(activity => 
+      activity.fromDateTime === activityToAdjust.activity.fromDateTime &&
+      activity.activityType === activityToAdjust.activity.activityType &&
+      activity.remarks === activityToAdjust.activity.remarks
+    );
+    
+    if (currentIndex === -1) {
+      // Activity not found, might have been deleted
+      setAdjustDialogOpen(false);
+      setActivityToAdjust(null);
+      return;
+    }
+    
+    const currentActivity = data[currentIndex];
+    const currentFromTime = new Date(currentActivity.fromDateTime).getTime();
+    
+    const newData = [...data];
+    
+    // Check for violations BEFORE adjustment to avoid affecting rows that already have issues
+    const originalViolations = validateSequentialTiming(data);
+    
+    const [activityToMove] = newData.splice(currentIndex, 1);
+    
+    let insertIndex = 0;
+    
+    for (let i = 0; i < newData.length; i++) {
+      const otherActivity = newData[i];
+      const otherFromTime = new Date(otherActivity.fromDateTime).getTime();
+      
+      if (currentFromTime < otherFromTime) {
+        insertIndex = i;
+        break;
+      }
+      insertIndex = i + 1;
+    }
+    
+    newData.splice(insertIndex, 0, activityToMove);
+    
+    let adjustedActivity = { ...activityToMove };
+    
+    adjustedActivity.fromDateTime = new Date(adjustedActivity.fromDateTime);
+    adjustedActivity.toDateTime = new Date(adjustedActivity.toDateTime);
+    
+    // Only adjust the previous activity's toDateTime if it doesn't have a violation
+    if (insertIndex > 0) {
+      const previousActivity = newData[insertIndex - 1];
+      const previousActivityOriginalIndex = insertIndex - 1;
+      
+      // Check if the previous activity had a violation in the original data
+      const previousHadViolation = originalViolations.includes(previousActivityOriginalIndex);
+      
+      // Only auto-adjust if the previous activity didn't have a violation
+      if (!previousHadViolation) {
+        previousActivity.toDateTime = new Date(adjustedActivity.fromDateTime);
+      }
+    }
+    
+    // Adjust the moved activity's toDateTime based on the next activity
+    if (insertIndex < newData.length - 1) {
+      const nextActivity = newData[insertIndex + 1];
+      const nextActivityFromTime = new Date(nextActivity.fromDateTime);
+      const movedActivityFromTime = adjustedActivity.fromDateTime;
+      
+      if (nextActivityFromTime.getTime() > movedActivityFromTime.getTime()) {
+        adjustedActivity.toDateTime = new Date(nextActivityFromTime.getTime());
+      } else {
+        const originalDuration = new Date(activityToMove.toDateTime).getTime() - new Date(activityToMove.fromDateTime).getTime();
+        const minDuration = Math.max(originalDuration, 60 * 60 * 1000);
+        adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + minDuration);
+      }
+    } else {
+      const originalDuration = new Date(activityToMove.toDateTime).getTime() - new Date(activityToMove.fromDateTime).getTime();
+      adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime() + originalDuration);
+    }
+    
+    if (adjustedActivity.toDateTime.getTime() < adjustedActivity.fromDateTime.getTime()) {
+      adjustedActivity.toDateTime = new Date(adjustedActivity.fromDateTime.getTime());
+    }
+    
+    adjustedActivity.day = adjustedActivity.fromDateTime.toISOString();
+    
+    newData[insertIndex] = adjustedActivity;
+    
+    // Forward chaining: Update toDateTime of each activity to match the next activity's fromDateTime
+    // This ensures proper timing chain flow after adjustment, but respects violation boundaries
+    for (let i = 0; i < newData.length - 1; i++) {
+      const currentActivity = newData[i];
+      const nextActivity = newData[i + 1];
+      
+      if (currentActivity && nextActivity) {
+        // Check if either activity had violations in the original data
+        // We need to map back to original indices to check violations properly
+        const currentHadViolation = originalViolations.some(violationIndex => {
+          // Find if this activity existed in the original data and had a violation
+          const originalActivity = data.find(origActivity => 
+            origActivity.fromDateTime === currentActivity.fromDateTime &&
+            origActivity.activityType === currentActivity.activityType &&
+            origActivity.remarks === currentActivity.remarks
+          );
+          return originalActivity && data.indexOf(originalActivity) === violationIndex;
+        });
+        
+        const nextHadViolation = originalViolations.some(violationIndex => {
+          const originalActivity = data.find(origActivity => 
+            origActivity.fromDateTime === nextActivity.fromDateTime &&
+            origActivity.activityType === nextActivity.activityType &&
+            origActivity.remarks === nextActivity.remarks
+          );
+          return originalActivity && data.indexOf(originalActivity) === violationIndex;
+        });
+        
+        // Only auto-adjust if neither activity had violations originally
+        if (!currentHadViolation && !nextHadViolation) {
+          // Update current activity's toDateTime to match next activity's fromDateTime
+          currentActivity.toDateTime = new Date(nextActivity.fromDateTime);
+        }
+      }
+    }
+    
+    // Handle the last activity - it should have zero duration or maintain its original toDateTime
+    const lastActivity = newData[newData.length - 1];
+    if (lastActivity) {
+      // Keep the last activity's toDateTime as is, or make it zero duration if needed
+      // This preserves the original behavior for the final activity
+    }
+    
+    queryClient.setQueryData<PortActivity[]>(
+      qk.portActivity.list(layTimeId),
+      newData
+    );
+    
+    setAdjustDialogOpen(false);
+    setActivityToAdjust(null);
+  };
+
+  const cancelAdjust = () => {
+    setAdjustDialogOpen(false);
+    setActivityToAdjust(null);
+  };
+
+  const cancelDelete = () => {
+    setDeleteDialogOpen(false);
+    setActivityToDelete(null);
   };
 
   const handleAddEvent = (existingData: PortActivity[]) => {
@@ -337,33 +456,25 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     let nextFromDateTime: Date;
     
     if (existingData.length === 0) {
-      nextFromDateTime = faker.date.recent();
+      // Start with a recent date for the first activity
+      nextFromDateTime = new Date();
     } else {
       const lastActivity = existingData[existingData.length - 1];
       nextFromDateTime = new Date(lastActivity.toDateTime);
     }
 
-    const duration = faker.number.int({ min: 1, max: 24 });
+    // toDateTime should match fromDateTime exactly (no gap)
     const toDateTime = new Date(nextFromDateTime.getTime());
 
     const newActivity: PortActivity = {
       day: nextFromDateTime.toISOString(),
-      activityType: faker.helpers.arrayElement([
-        "Loading",
-        "Unloading", 
-        "Waiting",
-        "Berthing",
-        "Unberthing",
-        "Inspection",
-        "Bunkering",
-        "Maintenance"
-      ]),
+      activityType: "Unknown", // Default to Unknown
       fromDateTime: nextFromDateTime,
-      duration,
-      percentage: faker.helpers.arrayElement([0, 50, 100]),
+      duration: 0, // Duration is 0 since toDateTime equals fromDateTime
+      percentage: 0, // Default to 0%
       toDateTime,
-      remarks: faker.lorem.sentence(),
-      deductions: faker.lorem.sentence(),
+      remarks: "", // Empty remarks by default
+      deductions: "", // Empty deductions by default
     };
 
     addPortActivityMutation.mutate({
@@ -395,7 +506,7 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
           {addPortActivityMutation.isPending ? 'Adding...' : 'Add Event'}
         </Button>
       </div>
-      <DataTable data={data || []} columns={getColumns(handleDeleteEvent, handleCloneEvent, handleUpdatePercentage, handleUpdateDateTime, handleUpdateActivityType, handleAdjustActivity, validationViolations)} validationViolations={validationViolations} />
+      <DataTable data={data || []} columns={columns} validationViolations={validationViolations} />
       {isEmpty && (
         <div className="text-center text-gray-500 dark:text-gray-400 py-8">
           <div className="mb-2">📋</div>
@@ -474,12 +585,58 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
 
 const columnHelper = createColumnHelper<PortActivity>();
 
-const getColumns = (
+// Memoized input component with its own local state to prevent re-renders
+const RemarksInput = memo(({ 
+  initialValue, 
+  onUpdate, 
+  placeholder = "Add remarks...",
+  rowIndex
+}: {
+  initialValue: string;
+  onUpdate: (index: number, value: string) => void;
+  placeholder?: string;
+  rowIndex: number;
+}) => {
+  const [localValue, setLocalValue] = useState(initialValue);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Update local value when initial value changes (e.g., from server)
+  useEffect(() => {
+    setLocalValue(initialValue);
+  }, [initialValue]);
+
+  const handleChange = (value: string) => {
+    setLocalValue(value);
+    
+    // Clear existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
+    // Debounce the update
+    timeoutRef.current = setTimeout(() => {
+      onUpdate(rowIndex, value);
+    }, 300);
+  };
+
+  return (
+    <input
+      type="text"
+      value={localValue}
+      onChange={(e) => handleChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    />
+  );
+});
+
+const createColumns = (
   onDelete: (index: number) => void, 
   onClone: (index: number) => void,
   onUpdatePercentage: (index: number, percentage: number) => void,
   onUpdateDateTime: (index: number, field: 'fromDateTime' | 'toDateTime', dateTime: Date) => void,
   onUpdateActivityType: (index: number, activityType: string) => void,
+  onUpdateRemarks: (index: number, remarks: string) => void,
   onAdjust: (index: number) => void,
   validationViolations: number[]
 ) => [
@@ -510,6 +667,7 @@ const getColumns = (
           onChange={(e) => onUpdateActivityType(rowIndex, e.target.value)}
           className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
+          <option value="Unknown">Unknown</option>
           <option value="Loading">Loading</option>
           <option value="Unloading">Unloading</option>
           <option value="Waiting">Waiting</option>
@@ -628,10 +786,15 @@ const getColumns = (
     header: "Remarks",
     cell: (info) => {
       const remarks = info.getValue();
-      return remarks ? (
-        <span className="text-gray-700 dark:text-gray-300">{remarks}</span>
-      ) : (
-        <span className="text-gray-400 italic">No remarks</span>
+      const rowIndex = info.row.index;
+      
+      return (
+        <RemarksInput
+          initialValue={remarks || ""}
+          onUpdate={onUpdateRemarks}
+          rowIndex={rowIndex}
+          placeholder="Add remarks..."
+        />
       );
     },
   }),

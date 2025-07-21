@@ -22,11 +22,11 @@ export const handlers = [
     const seed = Math.abs(layTimeId.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) + Date.now();
     faker.seed(seed);
     
-    // Return the activity with any server-side modifications
+    // Return the activity as-is, preserving empty remarks and deductions
     return HttpResponse.json({
       ...newActivity,
-      remarks: newActivity.remarks || faker.lorem.sentence(),
-      deductions: newActivity.deductions || faker.lorem.sentence(),
+      remarks: newActivity.remarks !== undefined ? newActivity.remarks : "",
+      deductions: newActivity.deductions !== undefined ? newActivity.deductions : "",
     });
   }),
   http.post("/v1/api/port-activity/:layTimeId/clone", async ({ request, params }) => {
@@ -37,11 +37,11 @@ export const handlers = [
     const seed = Math.abs(layTimeId.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) + Date.now();
     faker.seed(seed);
     
-    // Return the cloned activity with any server-side modifications
+    // Return the cloned activity preserving the remarks as provided
     return HttpResponse.json({
       ...activityToClone,
-      remarks: activityToClone.remarks || faker.lorem.sentence(),
-      deductions: activityToClone.deductions || faker.lorem.sentence(),
+      remarks: activityToClone.remarks !== undefined ? activityToClone.remarks : "",
+      deductions: activityToClone.deductions !== undefined ? activityToClone.deductions : "",
     });
   }),
   http.delete("/v1/api/port-activity/:layTimeId/delete/:activityId", () => {
