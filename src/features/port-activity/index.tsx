@@ -34,10 +34,15 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     activity: PortActivity;
   } | null>(null);
 
-  // Local state for activities (overrides server data when modified)
-  const [localActivities, setLocalActivities] = useState<
-    PortActivity[] | undefined
-  >(undefined);
+  // Cache for storing activities per layTimeId
+  const [activitiesCache, setActivitiesCache] = useState<
+    Record<string, PortActivity[] | undefined>
+  >({});
+
+  // Validation violations cache per layTimeId
+  const [validationCache, setValidationCache] = useState<
+    Record<string, string[]>
+  >({});
 
   const {
     data: serverData,
@@ -45,14 +50,32 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
     error,
   } = useAllPortActivities(layTimeId || "");
 
-  // Use local data if available, otherwise use server data
-  // const data = localActivities ?? serverData;
+  // Get current activities from cache or use server data
+  const localActivities = activitiesCache[layTimeId || ""] ?? serverData;
 
-  // Update local state when server data changes (only if we don't have local modifications)
+  // Helper function to update activities for current layTimeId
+  const setLocalActivities = useCallback((activities: PortActivity[] | undefined) => {
+    const currentLayTimeId = layTimeId || "";
+    setActivitiesCache(prev => ({
+      ...prev,
+      [currentLayTimeId]: activities
+    }));
+  }, [layTimeId]);
+
+  // Update server data in cache when it loads (only if we don't have cached data)
   useEffect(() => {
-    if (isLoading && !serverData) return;
-    setLocalActivities(serverData);
-  }, [isLoading]);
+    if (isLoading || !layTimeId) return;
+    
+    const currentLayTimeId = layTimeId;
+    const hasCachedData = activitiesCache[currentLayTimeId] !== undefined;
+    
+    if (!hasCachedData && serverData) {
+      setActivitiesCache(prev => ({
+        ...prev,
+        [currentLayTimeId]: serverData
+      }));
+    }
+  }, [isLoading, serverData, layTimeId, activitiesCache]);
 
   // Validation functions - must be defined before handleUpdateDateTime
   const validateSequentialTiming = (
@@ -104,9 +127,25 @@ export function PortActivity({ layTimeId }: PortActivityProps) {
   };
 
   // const validationViolations: number[] = [];
-  const [validationViolations, setValidationViolations] = useState<string[]>(
-    []
-  );
+  const validationViolations = validationCache[layTimeId || ""] ?? [];
+
+  // Helper function to update validation violations for current layTimeId
+  const setValidationViolations = useCallback((
+    updater: React.SetStateAction<string[]>
+  ) => {
+    const currentLayTimeId = layTimeId || "";
+    setValidationCache(prev => {
+      const currentViolations = prev[currentLayTimeId] ?? [];
+      const newViolations = typeof updater === 'function' 
+        ? updater(currentViolations) 
+        : updater;
+      
+      return {
+        ...prev,
+        [currentLayTimeId]: newViolations
+      };
+    });
+  }, [layTimeId]);
 
   const updateTimingChain = (data: PortActivity[] | undefined) => {
     if (!data || data.length === 0) return;
